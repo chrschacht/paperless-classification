@@ -1,4 +1,4 @@
-import { ReactNode, useState, useEffect, useRef } from 'react'
+import { ReactNode, useState, useEffect, useRef, type CSSProperties } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -81,10 +81,37 @@ const applyBackgroundImage = (settings: api.AppSettingsResponse) => {
   document.documentElement.style.setProperty('--app-background-image', `url("${imageUrl}")`)
 }
 
+const createBrandGlassStyle = (color: string | null): CSSProperties | undefined => {
+  const match = /^#([0-9a-f]{6})$/i.exec(color || '')
+  if (!match) return undefined
+  const value = Number.parseInt(match[1], 16)
+  const source = [(value >> 16) & 255, (value >> 8) & 255, value & 255]
+  const slate = [15, 23, 42]
+  const mix = (weight: number) => source.map((channel, index) =>
+    Math.round(channel * weight + slate[index] * (1 - weight))
+  )
+  const primary = mix(0.38)
+  const shadow = mix(0.24)
+
+  return {
+    background: `linear-gradient(135deg, rgba(${primary.join(', ')}, 0.74), rgba(${shadow.join(', ')}, 0.58))`,
+    borderColor: 'rgba(255, 255, 255, 0.34)',
+    boxShadow: `0 22px 60px rgba(${shadow.join(', ')}, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.22)`,
+    backdropFilter: 'blur(10px) saturate(155%)',
+    WebkitBackdropFilter: 'blur(10px) saturate(155%)',
+  }
+}
+
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [paperlessConnected, setPaperlessConnected] = useState<boolean | null>(null)
+  const [paperlessBranding, setPaperlessBranding] = useState<api.PaperlessBranding>({
+    title: null,
+    logo_url: null,
+    design_color: null,
+  })
+  const [paperlessLogoFailed, setPaperlessLogoFailed] = useState(false)
   const [llmConfigured, setLlmConfigured] = useState<boolean | null>(null)
   const [showDebugMenu, setShowDebugMenu] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(true)
@@ -179,20 +206,26 @@ export default function Layout({ children }: LayoutProps) {
         // Only load status after authentication
         Promise.all([
           api.getPaperlessStatus().catch(() => ({ connected: false })),
-          api.getActiveLLMProvider().catch(() => ({ configured: false }))
-        ]).then(([paperless, llm]) => {
+          api.getActiveLLMProvider().catch(() => ({ configured: false })),
+          api.getPaperlessBranding().catch(() => ({ title: null, logo_url: null, design_color: null })),
+        ]).then(([paperless, llm, branding]) => {
           setPaperlessConnected(paperless.connected)
           setLlmConfigured(llm.configured)
+          setPaperlessBranding(branding)
+          setPaperlessLogoFailed(false)
         })
       })
       .catch(() => {
         // If settings fail, still try to load (first time setup)
         Promise.all([
           api.getPaperlessStatus().catch(() => ({ connected: false })),
-          api.getActiveLLMProvider().catch(() => ({ configured: false }))
-        ]).then(([paperless, llm]) => {
+          api.getActiveLLMProvider().catch(() => ({ configured: false })),
+          api.getPaperlessBranding().catch(() => ({ title: null, logo_url: null, design_color: null })),
+        ]).then(([paperless, llm, branding]) => {
           setPaperlessConnected(paperless.connected)
           setLlmConfigured(llm.configured)
+          setPaperlessBranding(branding)
+          setPaperlessLogoFailed(false)
         })
       })
 
@@ -221,6 +254,14 @@ export default function Layout({ children }: LayoutProps) {
     return () => clearInterval(interval)
   }, [])
 
+  useEffect(() => {
+    const pageTitle = navigation.find(n => n.href === location.pathname)?.name
+      || navigation.flatMap(n => n.children ?? []).find(c => c.href === location.pathname)?.name
+      || 'Dashboard'
+    const instanceTitle = paperlessBranding.title || 'Paperless'
+    document.title = `${pageTitle} · ${instanceTitle} · Paperless Classification`
+  }, [location.pathname, paperlessBranding.title])
+
   const handlePasswordSubmit = async () => {
     try {
       const result = await api.verifyPassword(passwordInput)
@@ -246,6 +287,7 @@ export default function Layout({ children }: LayoutProps) {
 
   const isChildActive = (item: NavItem) =>
     item.children?.some(c => c.href === location.pathname) ?? false
+  const brandGlassStyle = createBrandGlassStyle(paperlessBranding.design_color)
 
   // Password login screen - BLOCKS EVERYTHING
   if (passwordRequired && !isAuthenticated) {
@@ -304,18 +346,29 @@ export default function Layout({ children }: LayoutProps) {
         'fixed lg:sticky lg:top-0 inset-y-0 left-0 z-50 w-72 h-screen flex flex-col transform transition-transform duration-300 ease-in-out',
         'm-0 lg:m-3 lg:mr-0 lg:rounded-3xl overflow-hidden glass-panel',
         sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-      )}>
+      )} style={brandGlassStyle}>
         {/* Logo */}
         <div className="h-16 flex items-center justify-between px-6 border-b border-surface-700/50">
           <Link to="/" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 
-                          flex items-center justify-center shadow-lg shadow-primary-600/30
-                          group-hover:shadow-primary-500/50 transition-shadow">
-              <FileText className="w-5 h-5 text-white" />
+            <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/25
+                          flex items-center justify-center shadow-lg shadow-slate-950/15
+                          group-hover:bg-white/20 transition-colors overflow-hidden shrink-0">
+              {paperlessBranding.logo_url && !paperlessLogoFailed ? (
+                <img
+                  src={paperlessBranding.logo_url}
+                  alt=""
+                  className="w-full h-full object-contain p-1"
+                  onError={() => setPaperlessLogoFailed(true)}
+                />
+              ) : (
+                <FileText className="w-5 h-5 text-white" />
+              )}
             </div>
-            <span className="font-display leading-tight text-surface-100">
-              <span className="block text-sm font-semibold">Paperless</span>
-              <span className="block text-xs font-medium text-surface-400">Classification</span>
+            <span className="font-display leading-tight text-surface-100 min-w-0">
+              <span className="block text-sm font-semibold truncate max-w-40" title={paperlessBranding.title || 'Paperless'}>
+                {paperlessBranding.title || 'Paperless'}
+              </span>
+              <span className="block text-xs font-medium text-surface-400">Paperless Classification</span>
             </span>
           </Link>
           <button
@@ -629,7 +682,10 @@ export default function Layout({ children }: LayoutProps) {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-h-screen min-w-0">
         {/* Top bar */}
-        <header className="sticky top-0 z-30 h-16 flex items-center gap-4 px-6 mx-3 mt-3 rounded-3xl glass-panel">
+        <header
+          className="sticky top-0 z-30 h-16 flex items-center gap-4 px-6 mx-3 mt-3 rounded-3xl glass-panel"
+          style={brandGlassStyle}
+        >
           <button
             className="lg:hidden p-2 hover:bg-surface-800 rounded-lg"
             onClick={() => setSidebarOpen(true)}
@@ -641,6 +697,21 @@ export default function Layout({ children }: LayoutProps) {
               || navigation.flatMap(n => n.children ?? []).find(c => c.href === location.pathname)?.name
               || 'Dashboard'}
           </h1>
+          <div className="ml-auto flex min-w-0 max-w-[45%] items-center gap-2 lg:hidden">
+            {paperlessBranding.logo_url && !paperlessLogoFailed ? (
+              <img
+                src={paperlessBranding.logo_url}
+                alt=""
+                className="h-8 w-8 shrink-0 rounded-lg border border-white/25 bg-white/15 object-contain p-1"
+                onError={() => setPaperlessLogoFailed(true)}
+              />
+            ) : (
+              <FileText className="h-5 w-5 shrink-0 text-white/80" />
+            )}
+            <span className="truncate text-xs font-semibold text-surface-200" title={paperlessBranding.title || 'Paperless'}>
+              {paperlessBranding.title || 'Paperless'}
+            </span>
+          </div>
         </header>
 
         {/* Page content */}

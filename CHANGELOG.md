@@ -4,6 +4,16 @@ Alle wichtigen Änderungen an Paperless Classification.
 
 ---
 
+## 2.1.0 – 2026-08-30
+
+### Neu
+- Der in Paperless-ngx konfigurierte Anwendungstitel und das individuelle Anwendungslogo werden automatisch übernommen.
+- Die Paperless-Designfarbe tönt Seitenmenü und Titelzeile in kontrastreicher Liquid-Glass-Optik.
+- Auf großen Bildschirmen erscheint die Paperless-Identität im dauerhaft eingeblendeten Seitenmenü, auf kleinen Bildschirmen kompakt in der Titelzeile.
+- Das Logo wird sicher über das Backend ausgeliefert; Paperless-Zugangsdaten und interne URLs bleiben verborgen.
+
+---
+
 ## 2.0.1 – 2026-08-30
 
 ### Behoben

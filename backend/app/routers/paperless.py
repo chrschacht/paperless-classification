@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+import hashlib
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
@@ -7,6 +10,7 @@ from app.services.paperless_client import PaperlessClient, get_paperless_client
 from app.services.cache import get_cache
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 async def update_db_cache(db: AsyncSession, key: str, data: list):
@@ -54,6 +58,63 @@ async def get_paperless_status(
             "url": client.base_url,
             "error": str(e)
         }
+
+
+@router.get("/branding")
+async def get_paperless_branding(
+    client: PaperlessClient = Depends(get_paperless_client),
+):
+    """Expose Paperless title and a local logo proxy without leaking credentials."""
+    if not client.base_url:
+        return {"title": None, "logo_url": None, "design_color": None}
+    try:
+        branding = await client.get_application_branding()
+        logo_path = branding.get("logo_path")
+        logo_version = (
+            hashlib.sha256(logo_path.encode("utf-8")).hexdigest()[:12]
+            if logo_path else None
+        )
+        return {
+            "title": branding.get("title"),
+            "design_color": branding.get("design_color"),
+            "logo_url": (
+                f"/api/paperless/branding/logo?v={logo_version}"
+                if logo_version else None
+            ),
+        }
+    except Exception as exc:
+        logger.warning("Could not load Paperless branding: %s", exc)
+        return {"title": None, "logo_url": None, "design_color": None}
+
+
+@router.get("/branding/logo")
+async def get_paperless_branding_logo(
+    client: PaperlessClient = Depends(get_paperless_client),
+):
+    """Proxy the configured Paperless logo for authenticated and remote setups."""
+    if not client.base_url:
+        raise HTTPException(status_code=404, detail="Paperless ist nicht konfiguriert.")
+    try:
+        branding = await client.get_application_branding()
+        logo_path = branding.get("logo_path")
+        if not logo_path:
+            raise HTTPException(status_code=404, detail="Kein Paperless-Logo konfiguriert.")
+        content, content_type = await client.get_application_logo(logo_path)
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers={
+                "Cache-Control": "private, max-age=300",
+                "Content-Disposition": "inline",
+                "X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Could not load Paperless logo: %s", exc)
+        raise HTTPException(status_code=502, detail="Paperless-Logo konnte nicht geladen werden.")
 
 
 @router.get("/correspondents")
@@ -159,4 +220,3 @@ async def get_document_previews(
         document_type_id=document_type_id,
         limit=limit
     )
-

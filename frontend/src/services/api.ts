@@ -50,6 +50,15 @@ export const checkHealth = () => fetchJson<{ status: string }>('/health')
 // Paperless Connection
 export const getPaperlessStatus = () => fetchJson<{ connected: boolean; url?: string; error?: string }>('/paperless/status')
 
+export interface PaperlessBranding {
+  title: string | null
+  logo_url: string | null
+  design_color: string | null
+}
+
+export const getPaperlessBranding = () =>
+  fetchJson<PaperlessBranding>('/paperless/branding')
+
 export const refreshPaperlessCache = () =>
   fetchJson<{ success: boolean; correspondents: number; tags: number; document_types: number; message: string }>('/paperless/refresh-cache', { method: 'POST' })
 

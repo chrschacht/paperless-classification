@@ -3,7 +3,9 @@
 import httpx
 import asyncio
 import logging
-from typing import Optional, List, Dict, Any
+import re
+from typing import Optional, List, Dict, Any, Tuple
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 from fastapi import Depends
@@ -15,6 +17,52 @@ from app.services.cache import get_cache
 
 # Cache TTL in seconds (30 minutes - tags/correspondents change rarely)
 CACHE_TTL = 1800
+MAX_BRAND_LOGO_BYTES = 5 * 1024 * 1024
+PAPERLESS_DEFAULT_THEME_COLOR = "#17541f"
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _resolve_paperless_asset_url(base_url: str, asset_path: str) -> str:
+    """Resolve a Paperless asset without permitting another origin."""
+    clean_base = str(base_url or "").strip().rstrip("/")
+    clean_asset = str(asset_path or "").strip()
+    if not clean_base or not clean_asset:
+        raise ValueError("Paperless asset URL is incomplete")
+
+    base = urlparse(clean_base)
+    parsed_asset = urlparse(clean_asset)
+    if parsed_asset.scheme or parsed_asset.netloc:
+        if (
+            parsed_asset.scheme.casefold() != base.scheme.casefold()
+            or parsed_asset.netloc.casefold() != base.netloc.casefold()
+        ):
+            raise ValueError("Paperless asset points to a different origin")
+        return clean_asset
+
+    # Paperless returns values such as /logo/example.png. The Paperless base URL
+    # may itself contain a path prefix, which must be retained.
+    return f"{clean_base}/{clean_asset.lstrip('/')}"
+
+
+def _extract_paperless_theme_color(ui_settings: Dict[str, Any]) -> str:
+    """Read Paperless' nested theme color and reject unsafe CSS values."""
+    theme = ui_settings.get("theme")
+    general_settings = ui_settings.get("general_settings")
+    candidates = [
+        ui_settings.get("general-settings:theme:color"),
+        theme.get("color") if isinstance(theme, dict) else None,
+        (
+            general_settings.get("theme", {}).get("color")
+            if isinstance(general_settings, dict)
+            and isinstance(general_settings.get("theme"), dict)
+            else None
+        ),
+    ]
+    for candidate in candidates:
+        color = str(candidate or "").strip()
+        if _HEX_COLOR_RE.fullmatch(color):
+            return color.lower()
+    return PAPERLESS_DEFAULT_THEME_COLOR
 
 
 class PaperlessClient:
@@ -116,6 +164,34 @@ class PaperlessClient:
                 return "results" in result or "count" in result
             except Exception:
                 return False
+
+    async def get_application_branding(self) -> Dict[str, Optional[str]]:
+        """Return the Paperless-ngx application title and configured logo path."""
+        payload = await self._request("GET", "/ui_settings/")
+        ui_settings = payload.get("settings", {}) if isinstance(payload, dict) else {}
+        title = str(ui_settings.get("app_title") or "").strip()
+        logo_path = str(ui_settings.get("app_logo") or "").strip()
+        return {
+            "title": title or None,
+            "logo_path": logo_path or None,
+            "design_color": _extract_paperless_theme_color(ui_settings),
+        }
+
+    async def get_application_logo(self, logo_path: str) -> Tuple[bytes, str]:
+        """Fetch a configured Paperless logo for the local branding proxy."""
+        url = _resolve_paperless_asset_url(self.base_url, logo_path)
+        headers = {"Authorization": f"Token {self.api_token}"} if self.api_token else {}
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, verify=False) as client:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+
+        content = response.content
+        if not content or len(content) > MAX_BRAND_LOGO_BYTES:
+            raise ValueError("Paperless logo is empty or exceeds 5 MB")
+        content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        if not content_type.startswith("image/"):
+            raise ValueError("Paperless logo is not an image")
+        return content, content_type
     
     # Correspondents
     async def get_correspondents(self, use_cache: bool = True) -> List[Dict]:
@@ -640,4 +716,3 @@ async def get_paperless_client(db: AsyncSession = Depends(get_db)) -> PaperlessC
         )
     
     return PaperlessClient()
-
