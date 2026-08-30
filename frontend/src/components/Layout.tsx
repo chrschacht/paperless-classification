@@ -35,6 +35,61 @@ interface LayoutProps {
   children: ReactNode
 }
 
+interface AutoFitTextProps {
+  text: string
+  className?: string
+  minFontSize?: number
+  maxFontSize?: number
+}
+
+function AutoFitText({
+  text,
+  className,
+  minFontSize = 9,
+  maxFontSize = 14,
+}: AutoFitTextProps) {
+  const containerRef = useRef<HTMLSpanElement>(null)
+  const textRef = useRef<HTMLSpanElement>(null)
+
+  useEffect(() => {
+    const container = containerRef.current
+    const textElement = textRef.current
+    if (!container || !textElement) return
+
+    const fitText = () => {
+      textElement.style.fontSize = `${maxFontSize}px`
+      const availableWidth = container.clientWidth
+      const requiredWidth = textElement.scrollWidth
+      if (!availableWidth || !requiredWidth) return
+
+      const fittedSize = Math.max(
+        minFontSize,
+        Math.min(maxFontSize, maxFontSize * (availableWidth / requiredWidth))
+      )
+      textElement.style.fontSize = `${Math.floor(fittedSize * 10) / 10}px`
+    }
+
+    fitText()
+    const resizeObserver = new ResizeObserver(fitText)
+    resizeObserver.observe(container)
+    void document.fonts?.ready.then(fitText)
+
+    return () => resizeObserver.disconnect()
+  }, [text, minFontSize, maxFontSize])
+
+  return (
+    <span ref={containerRef} className="block min-w-0 overflow-hidden" title={text}>
+      <span
+        ref={textRef}
+        className={clsx('block whitespace-nowrap', className)}
+        style={{ fontSize: `${maxFontSize}px` }}
+      >
+        {text}
+      </span>
+    </span>
+  )
+}
+
 interface NavChild {
   name: string
   href: string
@@ -348,27 +403,30 @@ export default function Layout({ children }: LayoutProps) {
         sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
       )} style={brandGlassStyle}>
         {/* Logo */}
-        <div className="h-16 flex items-center justify-between px-6 border-b border-surface-700/50">
-          <Link to="/" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/25
-                          flex items-center justify-center shadow-lg shadow-slate-950/15
-                          group-hover:bg-white/20 transition-colors overflow-hidden shrink-0">
+        <div className="h-16 flex items-center justify-between px-4 border-b border-surface-700/50">
+          <Link to="/" className="flex flex-1 min-w-0 items-center gap-2.5 group">
+            <div className="w-10 h-10 rounded-xl border border-white/80
+                          bg-gradient-to-br from-white via-slate-50 to-slate-200
+                          flex items-center justify-center shadow-lg shadow-slate-950/25
+                          ring-1 ring-slate-900/10 group-hover:from-white group-hover:to-white
+                          transition-colors overflow-hidden shrink-0">
               {paperlessBranding.logo_url && !paperlessLogoFailed ? (
                 <img
                   src={paperlessBranding.logo_url}
                   alt=""
-                  className="w-full h-full object-contain p-1"
+                  className="w-full h-full object-contain p-1 drop-shadow-[0_1px_1px_rgba(15,23,42,0.45)]"
                   onError={() => setPaperlessLogoFailed(true)}
                 />
               ) : (
-                <FileText className="w-5 h-5 text-white" />
+                <FileText className="w-5 h-5 text-slate-700" />
               )}
             </div>
-            <span className="font-display leading-tight text-surface-100 min-w-0">
-              <span className="block text-sm font-semibold truncate max-w-40" title={paperlessBranding.title || 'Paperless'}>
-                {paperlessBranding.title || 'Paperless'}
-              </span>
-              <span className="block text-xs font-medium text-surface-400">Paperless Classification</span>
+            <span className="font-display leading-tight text-surface-100 min-w-0 flex-1">
+              <AutoFitText
+                text={paperlessBranding.title || 'Paperless'}
+                className="font-semibold text-surface-100"
+              />
+              <span className="block whitespace-nowrap text-[11px] font-medium text-surface-300">Paperless Classification</span>
             </span>
           </Link>
           <button
@@ -702,14 +760,19 @@ export default function Layout({ children }: LayoutProps) {
               <img
                 src={paperlessBranding.logo_url}
                 alt=""
-                className="h-8 w-8 shrink-0 rounded-lg border border-white/25 bg-white/15 object-contain p-1"
+                className="h-8 w-8 shrink-0 rounded-lg border border-white/80 bg-gradient-to-br from-white via-slate-50 to-slate-200 object-contain p-1 shadow-md shadow-slate-950/20 ring-1 ring-slate-900/10 drop-shadow-[0_1px_1px_rgba(15,23,42,0.45)]"
                 onError={() => setPaperlessLogoFailed(true)}
               />
             ) : (
               <FileText className="h-5 w-5 shrink-0 text-white/80" />
             )}
-            <span className="truncate text-xs font-semibold text-surface-200" title={paperlessBranding.title || 'Paperless'}>
-              {paperlessBranding.title || 'Paperless'}
+            <span className="min-w-0 flex-1">
+              <AutoFitText
+                text={paperlessBranding.title || 'Paperless'}
+                className="font-semibold text-surface-100"
+                minFontSize={8}
+                maxFontSize={12}
+              />
             </span>
           </div>
         </header>

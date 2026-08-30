@@ -150,7 +150,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Paperless Classification",
     description="Intelligente Bereinigung von Korrespondenten, Tags und Dokumententypen in Paperless-ngx",
-    version="2.1.0",
+    version="2.1.1",
     lifespan=lifespan
 )
 

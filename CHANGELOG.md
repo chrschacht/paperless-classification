@@ -4,6 +4,15 @@ Alle wichtigen Änderungen an Paperless Classification.
 
 ---
 
+## 2.1.1 – 2026-08-30
+
+### Behoben
+- Individuelle Paperless-Logos erhalten eine kontrastreiche, helle Fläche mit Kontur und Schatten und bleiben dadurch auch auf dunklen oder farbigen Glass-Hintergründen erkennbar.
+- Der Paperless-Anwendungstitel nutzt die gesamte verfügbare Breite im Seitenmenü und wird dynamisch verkleinert, statt bereits wenige Zeichen vor dem Ende mit Auslassungspunkten abgeschnitten zu werden.
+- Die kompakte Titelzeile auf kleinen Bildschirmen verwendet dieselbe dynamische Anpassung.
+
+---
+
 ## 2.1.0 – 2026-08-30
 
 ### Neu
