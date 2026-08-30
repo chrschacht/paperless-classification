@@ -485,14 +485,12 @@ export default function DocumentClassifier() {
     if (!config) return
     setSettingsSaving(true)
     try {
-      // Auto-save fields (live-saved per click) ausklammern — sonst überschreibt der
-      // "Speichern"-Button im Settings-Tab versehentlich die zuletzt gewählten Tags.
+      // Die Tag-Filter werden außerhalb dieses Tabs sofort gespeichert. Die drei
+      // Status-Tag-Schalter gehören dagegen ausdrücklich zu diesem Formular und
+      // müssen zusammen mit ihren Namen und den zusätzlichen Regeln persistieren.
       const {
         auto_classify_only_tag_ids: _o,
         auto_classify_skip_tag_ids: _s,
-        classification_tag_enabled: _ce,
-        review_tag_enabled: _re,
-        tag_ideas_tag_enabled: _ie,
         ...settingsPayload
       } = config as any
       await api.updateClassifierConfig(settingsPayload)

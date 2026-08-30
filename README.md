@@ -61,9 +61,9 @@ Für produktive Installationen wird eine feste Version statt `latest` empfohlen:
 ```yaml
 services:
   backend:
-    image: ghcr.io/chrschacht/paperless-classification-backend:2.0.0
+    image: ghcr.io/chrschacht/paperless-classification-backend:2.0.1
   frontend:
-    image: ghcr.io/chrschacht/paperless-classification-frontend:2.0.0
+    image: ghcr.io/chrschacht/paperless-classification-frontend:2.0.1
 ```
 
 ### Erster Start
@@ -135,6 +135,7 @@ Vor einem Major-Upgrade ist das vollständige `data/`-Verzeichnis zu sichern. Hi
 - [Installation auf macOS](INSTALLATION_MAC.md)
 - [Sicherheit und Datenschutz](docs/SECURITY_AND_PRIVACY.md)
 - [Upgrade auf Version 2.0](docs/UPGRADE_V2.md)
+- [Release Notes 2.0.1](docs/RELEASE_NOTES_2.0.1.md)
 - [Release Notes 2.0.0](docs/RELEASE_NOTES_2.0.0.md)
 - [Prüf- und Abnahmecheckliste](INSTANCE_CHECKLIST.md)
 - [Entwicklung](DEVELOPMENT.md)

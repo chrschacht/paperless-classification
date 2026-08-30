@@ -4,6 +4,13 @@ Alle wichtigen Änderungen an Paperless Classification.
 
 ---
 
+## 2.0.1 – 2026-08-30
+
+### Behoben
+- Die Aktivierung der Status-Tags „Klassifiziert“, „Prüfen“ und „Tag-Ideen“ wird beim Speichern der KI-Klassifikationseinstellungen jetzt zuverlässig übernommen.
+
+---
+
 ## 2.0.0 – 2026-08-30
 
 ### Paperless Classification
