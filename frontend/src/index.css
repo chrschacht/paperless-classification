@@ -1,0 +1,214 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --color-bg: #eaf1fb;
+  --color-surface: rgba(255, 255, 255, 0.66);
+  --color-border: rgba(255, 255, 255, 0.76);
+  --color-text: #142033;
+  --color-text-muted: #53647e;
+  --color-primary: #087ff5;
+  --glass-shadow: 0 24px 64px rgba(47, 70, 105, 0.14), 0 3px 14px rgba(47, 70, 105, 0.08);
+}
+
+* { box-sizing: border-box; }
+
+html {
+  min-height: 100%;
+  background: #dfe9f2;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  overflow-x: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+  color: var(--color-text);
+  background-color: #dfe9f2;
+  background-image: var(--app-background-image, url('/paperless-classification-background.jpg'));
+  background-position: center 48%;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body::before,
+body::after {
+  display: none;
+}
+
+button,
+input,
+select,
+textarea { font: inherit; }
+
+button,
+a { -webkit-tap-highlight-color: transparent; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(71, 85, 105, 0.34);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(51, 65, 85, 0.52);
+  background-clip: padding-box;
+}
+
+::selection { color: #ffffff; background: var(--color-primary); }
+
+@layer components {
+  .glass-panel {
+    color: #ffffff;
+    background: rgba(15, 23, 42, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.48);
+    box-shadow: 0 22px 56px rgba(2, 6, 23, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+    -webkit-backdrop-filter: blur(10px) saturate(145%);
+    backdrop-filter: blur(10px) saturate(145%);
+  }
+
+  .btn {
+    @apply px-4 py-2.5 rounded-2xl font-semibold transition-all duration-200
+           focus:outline-none focus:ring-2 focus:ring-primary-500/60 focus:ring-offset-2;
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    box-shadow: 0 8px 22px rgba(47, 70, 105, 0.11), inset 0 1px 0 rgba(255, 255, 255, 0.68);
+  }
+
+  .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 28px rgba(47, 70, 105, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  }
+
+  .btn:active { transform: translateY(0) scale(0.985); }
+
+  .btn-primary {
+    @apply text-white focus:ring-primary-500;
+    background: linear-gradient(145deg, #2495ff, #0878eb 58%, #0068d8);
+    border-color: rgba(255, 255, 255, 0.34);
+    box-shadow: 0 12px 26px rgba(8, 127, 245, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.38);
+  }
+
+  .btn-primary:hover {
+    background: linear-gradient(145deg, #40a3ff, #087ff5 58%, #006edc);
+    box-shadow: 0 15px 32px rgba(8, 127, 245, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.46);
+  }
+
+  .btn-secondary {
+    @apply text-surface-100 focus:ring-surface-500;
+    background: rgba(255, 255, 255, 0.58);
+    border-color: rgba(255, 255, 255, 0.86);
+  }
+
+  .btn-secondary:hover { background: rgba(255, 255, 255, 0.82); }
+
+  .btn-danger {
+    @apply text-white focus:ring-red-500;
+    background: linear-gradient(145deg, #ff6b6b, #e5484d);
+    border-color: rgba(255, 255, 255, 0.34);
+  }
+
+  .input {
+    @apply w-full px-4 py-2.5 rounded-2xl text-surface-100 placeholder-surface-500
+           focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-400
+           transition-all duration-200;
+    background: rgba(255, 255, 255, 0.68);
+    border: 1px solid rgba(100, 116, 139, 0.2);
+    box-shadow: inset 0 1px 2px rgba(71, 85, 105, 0.07), 0 1px 0 rgba(255, 255, 255, 0.9);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    backdrop-filter: blur(16px) saturate(160%);
+  }
+
+  .input:focus {
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 0 0 4px rgba(8, 127, 245, 0.1), inset 0 1px 2px rgba(71, 85, 105, 0.05);
+  }
+
+  .card {
+    @apply rounded-3xl;
+    color: #ffffff;
+    background: rgba(15, 23, 42, 0.3) !important;
+    border: 1px solid rgba(255, 255, 255, 0.48);
+    box-shadow: 0 18px 48px rgba(2, 6, 23, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+    -webkit-backdrop-filter: blur(10px) saturate(145%) !important;
+    backdrop-filter: blur(10px) saturate(145%) !important;
+  }
+
+  .glass-stat-tile {
+    color: #ffffff;
+    background: rgba(15, 23, 42, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.48);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 5px 16px rgba(2, 6, 23, 0.12);
+    -webkit-backdrop-filter: blur(10px) saturate(145%);
+    backdrop-filter: blur(10px) saturate(145%);
+  }
+
+  .dashboard-page .card :where(h1, h2, h3, h4, p, span, div) {
+    color: #ffffff;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold;
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+
+  .badge-primary { @apply bg-primary-100/70 text-primary-700 border border-primary-300/60; }
+  .badge-warning { @apply bg-amber-100/80 text-amber-800 border border-amber-300/70; }
+  .badge-success { @apply bg-emerald-100/80 text-emerald-800 border border-emerald-300/70; }
+}
+
+.card :where(.text-surface-100, .text-surface-200, .text-surface-300, .text-surface-400, .text-surface-500, .text-surface-600):not(input):not(select):not(textarea):not(option),
+.glass-panel :where(.text-surface-100, .text-surface-200, .text-surface-300, .text-surface-400, .text-surface-500, .text-surface-600):not(input):not(select):not(textarea):not(option) {
+  color: #ffffff !important;
+}
+
+/* Page chrome sits directly on the photo. Keep headings, descriptions and
+   tab labels readable without changing light form controls or the RAG chat. */
+.page-content > :where(.text-surface-100, .text-surface-200, .text-surface-300, .text-surface-400, .text-surface-500, .text-surface-600),
+.page-content > :not(.card) :where(.text-surface-100, .text-surface-200, .text-surface-300, .text-surface-400, .text-surface-500, .text-surface-600):not(input):not(select):not(textarea):not(option) {
+  color: #ffffff !important;
+  text-shadow: 0 1px 3px rgba(2, 6, 23, 0.72);
+}
+
+.page-content > :not(.card) :where(h1, h2, h3) {
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(2, 6, 23, 0.72);
+}
+
+/* Legacy surface utilities are also used for small nested tiles. Normalize
+   those containers to the same glass recipe while keeping inputs and buttons
+   on their purpose-specific backgrounds. */
+.page-content :where(div, label, section, article, button)[class*="bg-surface-"] {
+  background-color: rgba(15, 23, 42, 0.3) !important;
+  -webkit-backdrop-filter: blur(10px) saturate(145%);
+  backdrop-filter: blur(10px) saturate(145%);
+}
+
+.page-content :where(pre, code)[class*="bg-surface-"] {
+  background-color: rgba(2, 6, 23, 0.78) !important;
+  color: #86efac !important;
+}
+
+@media (max-width: 768px) {
+  body {
+    background-position: 58% center;
+    background-attachment: scroll;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

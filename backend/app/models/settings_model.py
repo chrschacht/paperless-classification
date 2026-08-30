@@ -1,0 +1,84 @@
+from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime
+from sqlalchemy.sql import func
+from app.database import Base
+
+
+class PaperlessSettings(Base):
+    """Paperless-ngx connection settings."""
+    __tablename__ = "paperless_settings"
+    
+    id = Column(Integer, primary_key=True, default=1)
+    url = Column(String(500), nullable=False, default="")
+    api_token = Column(String(500), nullable=False, default="")
+    is_configured = Column(Boolean, default=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class LLMProvider(Base):
+    """LLM Provider configuration – central for all jobs."""
+    __tablename__ = "llm_providers"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, unique=True)  # openai or ollama
+    display_name = Column(String(200), nullable=False)
+    api_key = Column(String(500), default="")
+    api_base_url = Column(String(500), default="")  # Ollama endpoint
+    model = Column(String(200), default="")  # Default / Bereinigung model
+    classifier_model = Column(String(200), default="")  # Model for classification job (empty = use `model`)
+    is_active = Column(Boolean, default=False)  # Active for Bereinigung job
+    is_configured = Column(Boolean, default=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class CustomPrompt(Base):
+    """Custom prompts for different entity types."""
+    __tablename__ = "custom_prompts"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    entity_type = Column(String(50), nullable=False)  # correspondents, tags, document_types
+    prompt_template = Column(Text, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class IgnoredTag(Base):
+    """Tags that should be ignored during cleanup analysis."""
+    __tablename__ = "ignored_tags"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pattern = Column(String(500), nullable=False)  # Can be exact name or pattern
+    reason = Column(String(500), default="")  # Why it's ignored
+    is_regex = Column(Boolean, default=False)  # If true, treat as regex pattern
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class IgnoredItem(Base):
+    """Items (tags, correspondents, document_types) to ignore in specific analyses."""
+    __tablename__ = "ignored_items"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    item_id = Column(Integer, nullable=False)  # ID in Paperless
+    item_name = Column(String(500), nullable=False)  # Name for display
+    entity_type = Column(String(50), nullable=False)  # "tag", "correspondent", "document_type"
+    analysis_type = Column(String(50), nullable=False)  # "nonsense", "correspondent_match", "doctype_match", "similar"
+    reason = Column(String(500), default="")  # Optional: why it's ignored
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class AppSettings(Base):
+    """Application-wide settings."""
+    __tablename__ = "app_settings"
+    
+    id = Column(Integer, primary_key=True, default=1)
+    # UI Password Protection
+    password_enabled = Column(Boolean, default=False)
+    password_hash = Column(String(500), default="")  # Hashed password
+    # UI Options
+    show_debug_menu = Column(Boolean, default=False)
+    # Job → Provider assignments (store provider name, e.g. "openai", "ollama")
+    classifier_provider = Column(String(100), default="ollama")
+
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

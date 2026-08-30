@@ -1,0 +1,1289 @@
+import { useState, useEffect, useRef } from 'react'
+import { Save, Check, X, Eye, EyeOff, TestTube, Loader2, ChevronDown, ChevronUp, Cpu, Lock, Bug, Trash2, Ban, Key, Copy, Power, Code2, Image as ImageIcon, Upload, RotateCcw } from 'lucide-react'
+import clsx from 'clsx'
+import * as api from '../services/api'
+
+interface LLMProvider {
+  id: number
+  name: string
+  display_name: string
+  api_key: string
+  api_base_url: string
+  model: string
+  classifier_model: string
+  is_active: boolean
+  is_configured: boolean
+}
+
+export default function SettingsPanel() {
+  // Paperless Settings
+  const [paperlessUrl, setPaperlessUrl] = useState('')
+  const [paperlessToken, setPaperlessToken] = useState('')
+  const [showToken, setShowToken] = useState(false)
+  const [paperlessSaving, setPaperlessSaving] = useState(false)
+  const [paperlessTestResult, setPaperlessTestResult] = useState<{ success: boolean; message: string } | null>(null)
+
+  // LLM Providers
+  const [providers, setProviders] = useState<LLMProvider[]>([])
+  const [expandedProvider, setExpandedProvider] = useState<string | null>(null)
+  const [llmTestResult, setLlmTestResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [testingLLM, setTestingLLM] = useState(false)
+  
+  // Provider edit states
+  const [editingProvider, setEditingProvider] = useState<{[key: string]: LLMProvider}>({})
+  const [savingProvider, setSavingProvider] = useState<string | null>(null)
+  
+  
+  // Ollama installed models (fetched from Ollama API)
+  const [ollamaInstalledModels, setOllamaInstalledModels] = useState<string[]>([])
+  const [ollamaModelsLoading, setOllamaModelsLoading] = useState(false)
+  
+  // App Settings
+  const [appSettings, setAppSettings] = useState({
+    password_enabled: false,
+    password_set: false,
+    show_debug_menu: false,
+    classifier_provider: 'ollama',
+    custom_background: false,
+    background_version: 0,
+  })
+  const [newPassword, setNewPassword] = useState('')
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [savingAppSettings, setSavingAppSettings] = useState(false)
+  const [appSettingsSaved, setAppSettingsSaved] = useState(false)
+  const [backgroundBusy, setBackgroundBusy] = useState(false)
+  const [backgroundStatus, setBackgroundStatus] = useState<{ success: boolean; message: string } | null>(null)
+  const backgroundInputRef = useRef<HTMLInputElement>(null)
+  
+  // Ignored Items
+  const [ignoredItems, setIgnoredItems] = useState<api.IgnoredItem[]>([])
+  const [loadingIgnored, setLoadingIgnored] = useState(false)
+  const [removingIgnored, setRemovingIgnored] = useState<number | null>(null)
+
+  // API Keys
+  const [apiKeys, setApiKeys] = useState<api.ApiKeyInfo[]>([])
+  const [newKeyName, setNewKeyName] = useState('')
+  const [generatedKey, setGeneratedKey] = useState<string | null>(null)
+  const [generatingKey, setGeneratingKey] = useState(false)
+  const [deletingKeyId, setDeletingKeyId] = useState<number | null>(null)
+
+  useEffect(() => {
+    loadSettings()
+    loadAppSettings()
+    loadIgnoredItems()
+    loadApiKeys()
+  }, [])
+  
+  const loadIgnoredItems = async () => {
+    setLoadingIgnored(true)
+    try {
+      const items = await api.getIgnoredItems()
+      setIgnoredItems(items)
+    } catch (e) {
+      console.error('Failed to load ignored items:', e)
+    } finally {
+      setLoadingIgnored(false)
+    }
+  }
+  
+  const handleRemoveIgnored = async (id: number) => {
+    setRemovingIgnored(id)
+    try {
+      await api.removeIgnoredItem(id)
+      setIgnoredItems(ignoredItems.filter(item => item.id !== id))
+    } catch (e) {
+      console.error('Failed to remove ignored item:', e)
+    } finally {
+      setRemovingIgnored(null)
+    }
+  }
+
+  const loadApiKeys = async () => {
+    try {
+      const keys = await api.listApiKeys()
+      setApiKeys(keys)
+    } catch (e) {
+      console.error('Failed to load API keys:', e)
+    }
+  }
+
+  const handleGenerateKey = async () => {
+    if (!newKeyName.trim()) return
+    setGeneratingKey(true)
+    try {
+      const result = await api.generateApiKey(newKeyName.trim())
+      setGeneratedKey(result.key)
+      setNewKeyName('')
+      loadApiKeys()
+    } catch (e) {
+      console.error('Failed to generate key:', e)
+    } finally {
+      setGeneratingKey(false)
+    }
+  }
+
+  const handleDeleteKey = async (id: number) => {
+    setDeletingKeyId(id)
+    try {
+      await api.deleteApiKey(id)
+      loadApiKeys()
+    } catch (e) {
+      console.error('Failed to delete key:', e)
+    } finally {
+      setDeletingKeyId(null)
+    }
+  }
+
+  const handleToggleKey = async (id: number) => {
+    try {
+      await api.toggleApiKey(id)
+      loadApiKeys()
+    } catch (e) {
+      console.error('Failed to toggle key:', e)
+    }
+  }
+
+  const loadOllamaInstalledModels = async () => {
+    setOllamaModelsLoading(true)
+    try {
+      const res = await api.getClassifierOllamaModels()
+      if (res.connected && res.installed) {
+        setOllamaInstalledModels(res.installed.map((m: any) => m.name))
+      }
+    } catch (e) {
+      console.error('Failed to load Ollama models:', e)
+    } finally {
+      setOllamaModelsLoading(false)
+    }
+  }
+
+  const loadAppSettings = async () => {
+    try {
+      const settings = await api.getAppSettings()
+      setAppSettings(settings)
+      const imageUrl = settings.custom_background
+        ? api.getBackgroundImageUrl(settings.background_version)
+        : '/paperless-classification-background.jpg'
+      document.documentElement.style.setProperty('--app-background-image', `url("${imageUrl}")`)
+    } catch (e) {
+      console.error('Error loading app settings:', e)
+    }
+  }
+
+  const handleBackgroundUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    setBackgroundBusy(true)
+    setBackgroundStatus(null)
+    try {
+      const result = await api.uploadBackgroundImage(file)
+      const updated = {
+        ...appSettings,
+        custom_background: true,
+        background_version: result.background_version,
+      }
+      setAppSettings(updated)
+      document.documentElement.style.setProperty(
+        '--app-background-image',
+        `url("${api.getBackgroundImageUrl(result.background_version)}")`,
+      )
+      setBackgroundStatus({ success: true, message: 'Eigenes Hintergrundbild wurde aktiviert.' })
+    } catch (e: any) {
+      setBackgroundStatus({ success: false, message: e.message || 'Upload fehlgeschlagen.' })
+    } finally {
+      setBackgroundBusy(false)
+    }
+  }
+
+  const handleBackgroundReset = async () => {
+    setBackgroundBusy(true)
+    setBackgroundStatus(null)
+    try {
+      await api.removeBackgroundImage()
+      setAppSettings(prev => ({ ...prev, custom_background: false, background_version: 0 }))
+      document.documentElement.style.setProperty(
+        '--app-background-image',
+        'url("/paperless-classification-background.jpg")',
+      )
+      setBackgroundStatus({ success: true, message: 'Standard-Hintergrund wurde wiederhergestellt.' })
+    } catch (e: any) {
+      setBackgroundStatus({ success: false, message: e.message || 'Zurücksetzen fehlgeschlagen.' })
+    } finally {
+      setBackgroundBusy(false)
+    }
+  }
+
+  const saveAppSettings = async (updates: Partial<typeof appSettings> & { password?: string }) => {
+    setSavingAppSettings(true)
+    try {
+      await api.updateAppSettings(updates)
+      await loadAppSettings()
+      setAppSettingsSaved(true)
+      setTimeout(() => setAppSettingsSaved(false), 2000)
+      // Reload page to apply changes (like debug menu toggle)
+      if (updates.show_debug_menu !== undefined) {
+        window.location.reload()
+      }
+    } catch (e) {
+      console.error('Error saving app settings:', e)
+    } finally {
+      setSavingAppSettings(false)
+    }
+  }
+
+  const handleSetPassword = async () => {
+    if (!newPassword) return
+    await saveAppSettings({ password: newPassword, password_enabled: true })
+    setNewPassword('')
+  }
+
+  const handleRemovePassword = async () => {
+    await api.removePassword()
+    await loadAppSettings()
+    localStorage.removeItem('app_authenticated')
+  }
+
+  const loadSettings = async () => {
+    try {
+      const [paperlessSettings, llmProviders] = await Promise.all([
+        api.getPaperlessSettings(),
+        api.getLLMProviders()
+      ])
+
+      setPaperlessUrl(paperlessSettings.url)
+      setPaperlessToken(paperlessSettings.api_token)
+      setProviders(llmProviders)
+      
+      // Initialize edit states
+      const editStates: {[key: string]: LLMProvider} = {}
+      llmProviders.forEach((p: LLMProvider) => {
+        editStates[p.name] = { ...p }
+      })
+      setEditingProvider(editStates)
+    } catch (error) {
+      console.error('Error loading settings:', error)
+    }
+  }
+
+  const savePaperlessSettings = async () => {
+    setPaperlessSaving(true)
+    setPaperlessTestResult(null)
+    try {
+      await api.savePaperlessSettings({ url: paperlessUrl, api_token: paperlessToken })
+      
+      // Run detailed test via debug endpoint
+      const testRes = await fetch('/api/debug/paperless-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: paperlessUrl, token: paperlessToken })
+      })
+      const testResult = await testRes.json()
+      
+      if (testResult.success && testResult.is_paperless) {
+        setPaperlessTestResult({ 
+          success: true, 
+          message: `Verbindung erfolgreich! API gefunden: ${testResult.working_url}`
+        })
+      } else {
+        // Fallback to simple status check
+        const status = await api.getPaperlessStatus()
+        if (status.connected) {
+          setPaperlessTestResult({ success: true, message: 'Verbindung erfolgreich!' })
+        } else {
+          setPaperlessTestResult({ 
+            success: false, 
+            message: testResult.message || status.error || 'Verbindung fehlgeschlagen'
+          })
+        }
+      }
+    } catch (error) {
+      setPaperlessTestResult({ success: false, message: 'Fehler beim Speichern' })
+    } finally {
+      setPaperlessSaving(false)
+    }
+  }
+
+  const saveProvider = async (providerName: string) => {
+    const editState = editingProvider[providerName]
+    if (!editState) return
+    
+    const provider = providers.find(p => p.name === providerName)
+    if (!provider) return
+
+    setSavingProvider(providerName)
+    try {
+      await api.updateLLMProvider(provider.id, {
+        name: editState.name,
+        display_name: editState.display_name,
+        api_key: editState.api_key,
+        api_base_url: editState.api_base_url,
+        model: editState.model,
+        classifier_model: editState.classifier_model || '',
+        is_active: editState.is_active
+      })
+      
+      // Reload providers
+      const newProviders = await api.getLLMProviders()
+      setProviders(newProviders)
+      
+      // Update edit states
+      const editStates: {[key: string]: LLMProvider} = {}
+      newProviders.forEach((p: LLMProvider) => {
+        editStates[p.name] = { ...p }
+      })
+      setEditingProvider(editStates)
+    } catch (error) {
+      console.error('Error updating provider:', error)
+    } finally {
+      setSavingProvider(null)
+    }
+  }
+
+  const activateProvider = async (providerName: string) => {
+    const provider = providers.find(p => p.name === providerName)
+    if (!provider) return
+
+    setSavingProvider(providerName)
+    try {
+      await api.updateLLMProvider(provider.id, {
+        name: provider.name,
+        display_name: provider.display_name,
+        api_key: editingProvider[providerName]?.api_key || provider.api_key,
+        api_base_url: editingProvider[providerName]?.api_base_url || provider.api_base_url,
+        model: editingProvider[providerName]?.model || provider.model,
+        classifier_model: editingProvider[providerName]?.classifier_model || provider.classifier_model || '',
+        is_active: true
+      })
+      
+      const newProviders = await api.getLLMProviders()
+      setProviders(newProviders)
+      
+      const editStates: {[key: string]: LLMProvider} = {}
+      newProviders.forEach((p: LLMProvider) => {
+        editStates[p.name] = { ...p }
+      })
+      setEditingProvider(editStates)
+    } catch (error) {
+      console.error('Error activating provider:', error)
+    } finally {
+      setSavingProvider(null)
+    }
+  }
+
+  const updateEditState = (providerName: string, field: keyof LLMProvider, value: string | boolean) => {
+    setEditingProvider(prev => ({
+      ...prev,
+      [providerName]: {
+        ...prev[providerName],
+        [field]: value
+      }
+    }))
+  }
+
+  const testLLM = async () => {
+    setTestingLLM(true)
+    setLlmTestResult(null)
+    try {
+      const result = await api.testLLMConnection()
+      if (result.success) {
+        setLlmTestResult({ success: true, message: `Verbunden mit ${result.provider} (${result.model})` })
+      } else {
+        setLlmTestResult({ success: false, message: result.error || 'Test fehlgeschlagen' })
+      }
+    } catch (error) {
+      setLlmTestResult({ success: false, message: 'Verbindung fehlgeschlagen' })
+    } finally {
+      setTestingLLM(false)
+    }
+  }
+
+  return (
+    <div className="page-content space-y-8 max-w-[1600px] mx-auto">
+      <div className="grid grid-cols-1 min-[1200px]:grid-cols-2 gap-6 items-start">
+        {/* Paperless Settings */}
+        <div className="card p-6">
+        <h2 className="font-display font-semibold text-xl text-surface-100 mb-6">
+          Paperless-ngx Verbindung
+        </h2>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-surface-300 mb-2">
+              Paperless URL
+            </label>
+            <input
+              type="url"
+              value={paperlessUrl}
+              onChange={(e) => setPaperlessUrl(e.target.value)}
+              placeholder="https://paperless.example.com"
+              className="input"
+            />
+            <p className="mt-1 text-xs text-surface-500">
+              Tipp: Für lokales Paperless nutze <code className="text-primary-400">http://host.docker.internal:PORT</code>
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-surface-300 mb-2">
+              API Token
+            </label>
+            <div className="relative">
+              <input
+                type={showToken ? 'text' : 'password'}
+                value={paperlessToken}
+                onChange={(e) => setPaperlessToken(e.target.value)}
+                placeholder="Token aus Paperless Admin-Bereich"
+                className="input pr-12"
+              />
+              <button
+                type="button"
+                onClick={() => setShowToken(!showToken)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-400 hover:text-surface-200"
+              >
+                {showToken ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
+          </div>
+
+          {paperlessTestResult && (
+            <div className={clsx(
+              'p-4 rounded-lg',
+              paperlessTestResult.success 
+                ? 'bg-emerald-500/10 border border-emerald-500/30'
+                : 'bg-red-500/10 border border-red-500/30'
+            )}>
+              <div className="flex items-center gap-2">
+                {paperlessTestResult.success ? (
+                  <Check className="w-5 h-5 text-emerald-400" />
+                ) : (
+                  <X className="w-5 h-5 text-red-400" />
+                )}
+                <span className={paperlessTestResult.success ? 'text-emerald-400' : 'text-red-400'}>
+                  {paperlessTestResult.success ? 'Verbindung erfolgreich!' : 'Verbindung fehlgeschlagen'}
+                </span>
+              </div>
+              <p className="mt-2 text-sm text-surface-300">{paperlessTestResult.message}</p>
+            </div>
+          )}
+
+          <button
+            onClick={savePaperlessSettings}
+            disabled={paperlessSaving}
+            className="btn btn-primary flex items-center gap-2"
+          >
+            {paperlessSaving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            Speichern & Testen
+          </button>
+        </div>
+        </div>
+
+        {/* LLM Providers */}
+        <div className="card p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="font-display font-semibold text-xl text-surface-100">
+            LLM Provider
+          </h2>
+          <button
+            onClick={testLLM}
+            disabled={testingLLM}
+            className="btn btn-secondary flex items-center gap-2"
+          >
+            {testingLLM ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <TestTube className="w-4 h-4" />
+            )}
+            Aktiven Provider testen
+          </button>
+        </div>
+
+        {llmTestResult && (
+          <div className={clsx(
+            'p-3 rounded-lg flex items-center gap-2 mb-4',
+            llmTestResult.success 
+              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+              : 'bg-red-500/10 text-red-400 border border-red-500/30'
+          )}>
+            {llmTestResult.success ? <Check className="w-5 h-5" /> : <X className="w-5 h-5" />}
+            {llmTestResult.message}
+          </div>
+        )}
+
+        <div className="space-y-3">
+          {providers.map((provider) => {
+            const editState = editingProvider[provider.name] || provider
+            const isExpanded = expandedProvider === provider.name
+            
+            return (
+              <div
+                key={provider.id}
+                className={clsx(
+                  'rounded-xl border transition-all duration-200',
+                  provider.is_active 
+                    ? 'bg-primary-500/10 border-primary-500/30' 
+                    : 'bg-surface-800/50 border-surface-600/50'
+                )}
+              >
+                {/* Provider Header */}
+                <div 
+                  className="p-4 flex items-center justify-between cursor-pointer"
+                  onClick={() => setExpandedProvider(isExpanded ? null : provider.name)}
+                >
+                  <div className="flex items-center gap-3">
+                    {isExpanded ? (
+                      <ChevronUp className="w-5 h-5 text-surface-400" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5 text-surface-400" />
+                    )}
+                    <span className="font-medium text-surface-100">
+                      {provider.display_name}
+                    </span>
+                    {provider.is_active && (
+                      <span className="badge badge-primary">Aktiv</span>
+                    )}
+                    {provider.is_configured && !provider.is_active && (
+                      <span className="badge badge-success">Konfiguriert</span>
+                    )}
+                  </div>
+                  {!provider.is_active && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        activateProvider(provider.name)
+                      }}
+                      disabled={savingProvider === provider.name}
+                      className="btn btn-secondary text-sm"
+                    >
+                      {savingProvider === provider.name ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        'Aktivieren'
+                      )}
+                    </button>
+                  )}
+                </div>
+
+                {/* Provider Details */}
+                {isExpanded && (
+                  <div className="px-4 pb-4 pt-2 border-t border-surface-600/50 space-y-4">
+                    {/* API Key (not for Ollama) */}
+                    {provider.name !== 'ollama' && (
+                      <div>
+                        <label className="block text-sm font-medium text-surface-300 mb-2">
+                          API Key
+                        </label>
+                        <input
+                          type="password"
+                          value={editState.api_key === '***' ? '' : editState.api_key}
+                          onChange={(e) => updateEditState(provider.name, 'api_key', e.target.value)}
+                          placeholder={provider.api_key ? '••••••••••••••••' : 'API Key eingeben'}
+                          className="input"
+                        />
+                        <p className="mt-1 text-xs text-surface-500">
+                          {provider.name === 'openai' && 'Hole deinen Key von platform.openai.com/api-keys'}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Base URL for Ollama */}
+                    {provider.name === 'ollama' && (
+                      <div>
+                        <label className="block text-sm font-medium text-surface-300 mb-2">
+                          Ollama URL
+                        </label>
+                        <input
+                          type="url"
+                          value={editState.api_base_url}
+                          onChange={(e) => updateEditState(provider.name, 'api_base_url', e.target.value)}
+                          placeholder="http://host.docker.internal:11434"
+                          className="input"
+                        />
+                        {provider.name === 'ollama' && (
+                          <p className="mt-1 text-xs text-surface-500">
+                            Für lokales Ollama: <code className="text-primary-400">http://host.docker.internal:11434</code>
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* === OLLAMA: Role-based model selection with live data === */}
+                    {provider.name === 'ollama' ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-sm font-medium text-surface-300">Modelle</label>
+                          <button
+                            onClick={loadOllamaInstalledModels}
+                            disabled={ollamaModelsLoading}
+                            className="btn text-xs flex items-center gap-1.5 bg-surface-700 hover:bg-surface-600 text-surface-300"
+                          >
+                            {ollamaModelsLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Cpu className="w-3 h-3" />}
+                            Installierte Modelle laden
+                          </button>
+                        </div>
+
+                        {/* Bereinigung Model */}
+                        <div className="p-3 bg-surface-700/30 rounded-lg space-y-2">
+                          <label className="block text-sm font-medium text-surface-200">Bereinigung-Modell</label>
+                          <p className="text-xs text-surface-500">Fuer Metadaten-Bereinigung (Tags, Korrespondenten, Dokumententypen zusammenfuehren)</p>
+                          {ollamaInstalledModels.length > 0 ? (
+                            <select
+                              value={editState.model}
+                              onChange={(e) => updateEditState(provider.name, 'model', e.target.value)}
+                              className="input"
+                            >
+                              {!ollamaInstalledModels.includes(editState.model) && editState.model && (
+                                <option value={editState.model}>{editState.model} (nicht gefunden)</option>
+                              )}
+                              {ollamaInstalledModels.map(m => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              value={editState.model}
+                              onChange={(e) => updateEditState(provider.name, 'model', e.target.value)}
+                              placeholder="z.B. llama3.1"
+                              className="input"
+                            />
+                          )}
+                        </div>
+
+                        {/* Klassifikationsmodell */}
+                        <div className="p-3 bg-surface-700/30 rounded-lg space-y-2">
+                          <label className="block text-sm font-medium text-surface-200">Klassifikationsmodell</label>
+                          <p className="text-xs text-surface-500">Fuer Dokument-Klassifizierung (Tags, Typ, Korrespondent zuordnen)</p>
+                          {ollamaInstalledModels.length > 0 ? (
+                            <select
+                              value={editState.classifier_model || ''}
+                              onChange={(e) => updateEditState(provider.name, 'classifier_model', e.target.value)}
+                              className="input"
+                            >
+                              <option value="">Gleich wie Bereinigung ({editState.model || '-'})</option>
+                              {ollamaInstalledModels.map(m => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              value={editState.classifier_model || ''}
+                              onChange={(e) => updateEditState(provider.name, 'classifier_model', e.target.value)}
+                              placeholder={editState.model || 'Gleich wie Bereinigung'}
+                              className="input"
+                            />
+                          )}
+                        </div>
+
+                        {ollamaInstalledModels.length === 0 && !ollamaModelsLoading && (
+                          <p className="text-xs text-surface-500">Klicke "Installierte Modelle laden" um Dropdowns zu sehen.</p>
+                        )}
+                      </div>
+                    ) : (
+                      /* === OPENAI: Simple text inputs === */
+                      <>
+                        <div className="p-3 bg-surface-700/30 rounded-lg space-y-2">
+                          <label className="block text-sm font-medium text-surface-200">Bereinigung-Modell</label>
+                          <p className="text-xs text-surface-500">Fuer Metadaten-Bereinigung (Tags, Korrespondenten, Dokumententypen zusammenfuehren)</p>
+                          <input
+                            type="text"
+                            value={editState.model}
+                            onChange={(e) => updateEditState(provider.name, 'model', e.target.value)}
+                            placeholder="z.B. gpt-4o oder gpt-4o-mini"
+                            className="input"
+                          />
+                        </div>
+
+                        <div className="p-3 bg-surface-700/30 rounded-lg space-y-2">
+                          <label className="block text-sm font-medium text-surface-200">Klassifikationsmodell <span className="text-surface-500 font-normal">(optional)</span></label>
+                          <p className="text-xs text-surface-500">Eigenes Modell fuer Dokument-Klassifizierung (leer = Bereinigung-Modell wird verwendet)</p>
+                          <input
+                            type="text"
+                            value={editState.classifier_model || ''}
+                            onChange={(e) => updateEditState(provider.name, 'classifier_model', e.target.value)}
+                            placeholder={editState.model ? `Gleich wie ${editState.model}` : 'Gleich wie Bereinigung-Modell'}
+                            className="input"
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {/* Save Button */}
+                    <div className="pt-2">
+                      <button
+                        onClick={() => saveProvider(provider.name)}
+                        disabled={savingProvider === provider.name}
+                        className="btn btn-primary flex items-center gap-2"
+                      >
+                        {savingProvider === provider.name ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Save className="w-4 h-4" />
+                        )}
+                        Speichern
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 min-[1200px]:grid-cols-[minmax(20rem,0.8fr)_minmax(0,1.2fr)] gap-6 items-start">
+        {/* Job-Zuweisung */}
+        <div className="card p-6 min-[1200px]:col-start-1 min-[1200px]:row-start-1">
+        <h2 className="text-lg font-semibold text-surface-100 mb-4 flex items-center gap-2">
+          <Cpu className="w-5 h-5 text-primary-400" />
+          Job-Zuweisung
+        </h2>
+        <p className="text-sm text-surface-400 mb-4">
+          Welcher Provider wird fuer welchen Job verwendet?
+        </p>
+        <div className="space-y-4">
+          {/* Bereinigung */}
+          <div className="flex flex-col 2xl:flex-row 2xl:items-center justify-between gap-3 p-3 bg-surface-700/50 rounded-lg">
+            <div>
+              <p className="text-sm font-medium text-surface-200">Metadaten-Bereinigung</p>
+              <p className="text-xs text-surface-500">Tags, Korrespondenten, Dokumententypen aufraeumen</p>
+            </div>
+            <select
+              value={providers.find(p => p.is_active)?.name || ''}
+              onChange={async (e) => {
+                const selectedName = e.target.value
+                const selectedProvider = providers.find(p => p.name === selectedName)
+                if (!selectedProvider) return
+                const edit = editingProvider[selectedName]
+                await api.updateLLMProvider(selectedProvider.id, {
+                  name: selectedProvider.name,
+                  display_name: selectedProvider.display_name,
+                  api_key: edit?.api_key || selectedProvider.api_key,
+                  api_base_url: edit?.api_base_url || selectedProvider.api_base_url,
+                  model: edit?.model || selectedProvider.model,
+                  classifier_model: edit?.classifier_model || selectedProvider.classifier_model || '',
+                  is_active: true
+                })
+                const newProviders = await api.getLLMProviders()
+                setProviders(newProviders)
+                const editStates: {[key: string]: LLMProvider} = {}
+                newProviders.forEach((p: LLMProvider) => { editStates[p.name] = { ...p } })
+                setEditingProvider(editStates)
+              }}
+              className="input w-full 2xl:w-48 text-sm"
+            >
+              {providers.filter(p => p.is_configured || p.name === 'ollama').map(p => (
+                <option key={p.name} value={p.name}>{p.display_name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Klassifikation */}
+          <div className="flex flex-col 2xl:flex-row 2xl:items-center justify-between gap-3 p-3 bg-surface-700/50 rounded-lg">
+            <div>
+              <p className="text-sm font-medium text-surface-200">Dokumentklassifikation</p>
+              <p className="text-xs text-surface-500">Tags, Typ, Korrespondent, Speicherpfad zuordnen</p>
+            </div>
+            <select
+              value={appSettings.classifier_provider}
+              onChange={async (e) => {
+                const val = e.target.value
+                setAppSettings(prev => ({ ...prev, classifier_provider: val }))
+                await api.updateAppSettings({ classifier_provider: val })
+              }}
+              className="input w-full 2xl:w-48 text-sm"
+            >
+              {providers.map(p => (
+                <option key={p.name} value={p.name}>{p.display_name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Benchmark */}
+          <div className="flex flex-col 2xl:flex-row 2xl:items-center justify-between gap-2 p-3 bg-surface-700/50 rounded-lg">
+            <div>
+              <p className="text-sm font-medium text-surface-200">Benchmark</p>
+              <p className="text-xs text-surface-500">Mehrere Provider gleichzeitig testen</p>
+            </div>
+            <div className="text-sm text-surface-400 2xl:text-right">
+              Freie Auswahl in der Klassifikation
+            </div>
+          </div>
+
+          {/* OCR */}
+          <div className="flex flex-col 2xl:flex-row 2xl:items-center justify-between gap-2 p-3 bg-surface-700/50 rounded-lg">
+            <div>
+              <p className="text-sm font-medium text-surface-200">OCR Vision</p>
+              <p className="text-xs text-surface-500">Texterkennung mit Ollama Vision-Modellen</p>
+            </div>
+            <div className="text-sm text-surface-400 2xl:text-right">
+              Ollama (eigene OCR-Einstellungen)
+            </div>
+          </div>
+        </div>
+        </div>
+
+        {/* App Settings */}
+        <div className="card p-6 min-[1200px]:col-start-2 min-[1200px]:row-start-1 min-[1200px]:row-span-2">
+        <h2 className="font-display font-semibold text-lg text-surface-100 mb-6 flex items-center gap-2">
+          <Lock className="w-5 h-5 text-primary-400" />
+          App-Einstellungen
+        </h2>
+
+        <div className="grid grid-cols-1 2xl:grid-cols-2 gap-4 items-start">
+          {/* Background image */}
+          <div className="p-4 rounded-2xl bg-surface-800/50 border border-surface-700 2xl:row-span-2">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="p-2 rounded-xl bg-primary-500/10 border border-primary-500/20">
+                <ImageIcon className="w-5 h-5 text-primary-600" />
+              </div>
+              <div>
+                <h3 className="font-medium text-surface-100">Eigenes Hintergrundbild</h3>
+                <p className="text-sm text-surface-400 mt-1">
+                  Das Bild wird bildschirmfüllend und ohne Farbverlauf oder weitere Überlagerung dargestellt.
+                  Unterstützt werden JPEG, PNG und WebP bis 25 MB.
+                </p>
+              </div>
+            </div>
+
+            <div
+              className="h-40 rounded-2xl border border-white/80 bg-center bg-cover shadow-inner"
+              style={{
+                backgroundImage: appSettings.custom_background
+                  ? `url("${api.getBackgroundImageUrl(appSettings.background_version)}")`
+                  : 'url("/paperless-classification-background.jpg")',
+              }}
+              aria-label="Vorschau des aktiven Hintergrundbildes"
+            />
+
+            <input
+              ref={backgroundInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={handleBackgroundUpload}
+            />
+            <div className="flex flex-wrap gap-3 mt-4">
+              <button
+                type="button"
+                onClick={() => backgroundInputRef.current?.click()}
+                disabled={backgroundBusy}
+                className="btn btn-primary flex items-center gap-2"
+              >
+                {backgroundBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                Bild hochladen
+              </button>
+              <button
+                type="button"
+                onClick={handleBackgroundReset}
+                disabled={backgroundBusy || !appSettings.custom_background}
+                className="btn btn-secondary flex items-center gap-2 disabled:opacity-50"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Standardbild verwenden
+              </button>
+            </div>
+
+            <p className="text-xs text-surface-500 mt-3">
+              Standardbild: „Geöffneter Ordner für Dokumente auf dem Tisch“ von Anete Lusina auf Pexels.
+            </p>
+            {backgroundStatus && (
+              <div className={clsx(
+                'mt-3 rounded-xl border px-3 py-2 text-sm',
+                backgroundStatus.success
+                  ? 'bg-emerald-50/70 border-emerald-300 text-emerald-800'
+                  : 'bg-red-50/70 border-red-300 text-red-800',
+              )}>
+                {backgroundStatus.message}
+              </div>
+            )}
+          </div>
+
+          {/* Password Protection */}
+          <div className="p-4 rounded-lg bg-surface-800/50 border border-surface-700">
+            <h3 className="font-medium text-surface-100 mb-3">Passwort-Schutz</h3>
+            <p className="text-sm text-surface-400 mb-4">
+              Schütze die gesamte Anwendung mit einem Passwort. Ohne Passwort ist kein Zugriff möglich!
+            </p>
+            
+            {appSettings.password_set ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <Check className="w-4 h-4" />
+                  <span>Passwort ist gesetzt</span>
+                </div>
+                <button
+                  onClick={handleRemovePassword}
+                  className="btn btn-danger btn-sm flex items-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Entfernen
+                </button>
+              </div>
+            ) : (
+            <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex-1 relative">
+                  <input
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Neues Passwort"
+                    className="input w-full pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-400 hover:text-surface-200"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <button
+                  onClick={handleSetPassword}
+                  disabled={!newPassword || savingAppSettings}
+                  className="btn btn-primary flex items-center gap-2"
+                >
+                  <Lock className="w-4 h-4" />
+                  Setzen
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Debug Menu Toggle */}
+          <div className="p-4 rounded-lg bg-surface-800/50 border border-surface-700">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="font-medium text-surface-100 flex items-center gap-2">
+                  <Bug className="w-4 h-4 text-surface-400" />
+                  Debug-Menü in Sidebar
+                </h3>
+                <p className="text-sm text-surface-400 mt-1">
+                  Zeigt Netzwerk-Diagnose-Tools in der Navigation
+                </p>
+              </div>
+              <button
+                onClick={() => saveAppSettings({ show_debug_menu: !appSettings.show_debug_menu })}
+                className={clsx(
+                  'relative w-12 h-6 rounded-full transition-colors',
+                  appSettings.show_debug_menu ? 'bg-primary-500' : 'bg-surface-600'
+                )}
+              >
+                <span className={clsx(
+                  'absolute top-1 w-4 h-4 rounded-full bg-white transition-all',
+                  appSettings.show_debug_menu ? 'left-7' : 'left-1'
+                )} />
+              </button>
+            </div>
+          </div>
+
+          {/* Save Confirmation */}
+          {appSettingsSaved && (
+            <div className="flex items-center gap-2 text-emerald-400 text-sm 2xl:col-span-2">
+              <Check className="w-4 h-4" />
+              Einstellungen gespeichert
+            </div>
+          )}
+        </div>
+        </div>
+      
+        {/* Ignored Items */}
+        <div className="card p-6 min-[1200px]:col-start-1 min-[1200px]:row-start-2">
+        <h2 className="font-display font-semibold text-lg text-surface-100 mb-6 flex items-center gap-2">
+          <Ban className="w-5 h-5 text-red-400" />
+          Ignorierte Einträge
+          {ignoredItems.length > 0 && (
+            <span className="text-sm font-normal text-surface-400">({ignoredItems.length})</span>
+          )}
+        </h2>
+        
+        <p className="text-sm text-surface-400 mb-4">
+          Diese Einträge werden bei KI-Analysen nicht mehr vorgeschlagen. Du kannst sie hier wieder aktivieren.
+        </p>
+        
+        {loadingIgnored ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-primary-400" />
+          </div>
+        ) : ignoredItems.length === 0 ? (
+          <div className="text-center py-8 text-surface-500">
+            Keine ignorierten Einträge vorhanden.
+          </div>
+        ) : (
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {ignoredItems.map(item => (
+              <div 
+                key={item.id} 
+                className="flex items-center justify-between p-3 rounded-lg bg-surface-800/50 border border-surface-700"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-surface-200">{item.item_name}</span>
+                    <span className="text-xs px-2 py-0.5 rounded bg-surface-700 text-surface-400">
+                      {item.entity_type === 'tag' ? 'Tag' : 
+                       item.entity_type === 'correspondent' ? 'Korrespondent' : 'Dokumententyp'}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded bg-surface-700 text-surface-400">
+                      {item.analysis_type === 'nonsense' ? 'Unsinnig' :
+                       item.analysis_type === 'correspondent_match' ? 'Korrespondent-Match' :
+                       item.analysis_type === 'doctype_match' ? 'Dokumententyp-Match' : 'Ähnlich'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-surface-500 mt-1">
+                    Ignoriert am {new Date(item.created_at).toLocaleDateString('de-DE')}
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleRemoveIgnored(item.id)}
+                  disabled={removingIgnored === item.id}
+                  className="p-2 rounded text-surface-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                  title="Wieder aktivieren"
+                >
+                  {removingIgnored === item.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Check className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        </div>
+      </div>
+
+      {/* Externe API */}
+      <div className="card p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Code2 className="w-6 h-6 text-primary-400" />
+          <h2 className="text-xl font-semibold text-surface-100">Externe API (RAG Chat)</h2>
+        </div>
+
+        <p className="text-sm text-surface-400 mb-4">
+          Binde den Dokumenten-Chat in deine eigene Software ein. Generiere einen API-Key und nutze die REST-API,
+          um per Chat Dokumente zu finden und Fragen zu beantworten.
+        </p>
+
+        {/* API Key generieren */}
+        <div className="border border-surface-600 rounded-lg p-4 mb-4">
+          <h3 className="text-sm font-semibold text-surface-200 mb-3 flex items-center gap-2">
+            <Key className="w-4 h-4 text-primary-400" />
+            API-Keys verwalten
+          </h3>
+
+          <div className="flex gap-2 mb-3">
+            <input
+              type="text"
+              value={newKeyName}
+              onChange={(e) => setNewKeyName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleGenerateKey()}
+              placeholder="Name fuer den Key (z.B. 'Mein ERP-System')"
+              className="flex-1 px-3 py-2 bg-surface-700 border border-surface-600 rounded-lg text-sm text-surface-100 placeholder-surface-500"
+            />
+            <button
+              onClick={handleGenerateKey}
+              disabled={!newKeyName.trim() || generatingKey}
+              className="btn btn-primary flex items-center gap-2"
+            >
+              {generatingKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
+              Key generieren
+            </button>
+          </div>
+
+          {generatedKey && (
+            <div className="bg-green-900/30 border border-green-700 rounded-lg p-3 mb-3">
+              <div className="text-sm font-medium text-green-300 mb-1">Neuer API-Key erstellt:</div>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 bg-surface-800 px-3 py-2 rounded border border-green-700 text-sm font-mono text-green-300 break-all">
+                  {generatedKey}
+                </code>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(generatedKey); }}
+                  className="p-2 text-green-400 hover:bg-green-900/50 rounded"
+                  title="Kopieren"
+                >
+                  <Copy className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-xs text-green-400 mt-1">
+                Speichere diesen Key jetzt! Er wird nicht erneut angezeigt.
+              </p>
+            </div>
+          )}
+
+          {apiKeys.length > 0 && (
+            <div className="space-y-2">
+              {apiKeys.map((k) => (
+                <div key={k.id} className="flex items-center justify-between bg-surface-700/50 rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-3">
+                    <Key className={clsx('w-4 h-4', k.is_active ? 'text-green-400' : 'text-surface-500')} />
+                    <div>
+                      <div className="text-sm font-medium text-surface-100">{k.name}</div>
+                      <div className="text-xs text-surface-400">
+                        {k.key_prefix}... | Erstellt: {k.created_at ? new Date(k.created_at).toLocaleDateString('de-DE') : '-'}
+                        {k.last_used_at && <> | Zuletzt: {new Date(k.last_used_at).toLocaleDateString('de-DE')}</>}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleToggleKey(k.id)}
+                      className={clsx('p-1.5 rounded', k.is_active ? 'text-green-400 hover:bg-surface-600' : 'text-surface-500 hover:bg-surface-600')}
+                      title={k.is_active ? 'Deaktivieren' : 'Aktivieren'}
+                    >
+                      <Power className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteKey(k.id)}
+                      disabled={deletingKeyId === k.id}
+                      className="p-1.5 text-red-400 hover:text-red-300 hover:bg-surface-600 rounded"
+                      title="Loeschen"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* API Dokumentation */}
+        <div className="border border-surface-600 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-surface-200 flex items-center gap-2">
+              <Code2 className="w-4 h-4 text-primary-400" />
+              API-Dokumentation
+            </h3>
+            <a
+              href="/docs"
+              target="_blank"
+              rel="noopener"
+              className="btn btn-primary flex items-center gap-2 text-sm"
+            >
+              <TestTube className="w-4 h-4" />
+              Swagger UI oeffnen
+            </a>
+          </div>
+
+          <div className="space-y-4 text-sm">
+            <div>
+              <h4 className="font-medium text-surface-100 mb-1">Was kann die API?</h4>
+              <ul className="list-disc list-inside text-surface-400 space-y-1">
+                <li><strong className="text-surface-200">Chat</strong> - Stelle Fragen zu deinen Dokumenten, die KI antwortet mit Quellenangaben</li>
+                <li><strong className="text-surface-200">Suche</strong> - Semantische Dokumentensuche (findet Bedeutung, nicht nur Stichworte)</li>
+                <li><strong className="text-surface-200">Sessions</strong> - Chat-Verlaeufe werden gespeichert und koennen abgerufen werden</li>
+                <li><strong className="text-surface-200">Transaktions-Match</strong> - Bank-/PayPal-Buchung an Paperless-Beleg matchen (für EÜR/Buchhaltung)</li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 className="font-medium text-surface-100 mb-1">Authentifizierung</h4>
+              <p className="text-surface-400 mb-2">Sende den API-Key als Bearer-Token im Authorization-Header:</p>
+              <pre className="bg-surface-900 text-green-400 rounded-lg p-3 overflow-x-auto text-xs">
+{`Authorization: Bearer po_dein_api_key_hier`}</pre>
+            </div>
+
+            <div>
+              <h4 className="font-medium text-surface-100 mb-1">Chat-Endpunkt (SSE Streaming)</h4>
+              <pre className="bg-surface-900 text-green-400 rounded-lg p-3 overflow-x-auto text-xs">
+{`POST /api/rag/chat
+Content-Type: application/json
+Authorization: Bearer po_dein_api_key
+
+{
+  "question": "Welche Rechnungen habe ich von Vodafone?",
+  "session_id": null,
+  "filters": {
+    "correspondent_id": null,
+    "document_type_id": null,
+    "tags": null
+  }
+}`}</pre>
+              <p className="text-surface-500 mt-1">Antwort: Server-Sent Events (SSE) mit Token-Stream und Quellenangaben.</p>
+            </div>
+
+            <div>
+              <h4 className="font-medium text-surface-100 mb-1">Such-Endpunkt</h4>
+              <pre className="bg-surface-900 text-green-400 rounded-lg p-3 overflow-x-auto text-xs">
+{`POST /api/rag/search
+Content-Type: application/json
+Authorization: Bearer po_dein_api_key
+
+{
+  "query": "Mietvertrag",
+  "limit": 5
+}`}</pre>
+              <p className="text-surface-500 mt-1">Antwort: JSON mit relevanten Dokumenten, Scores und Snippets.</p>
+            </div>
+
+            <div>
+              <h4 className="font-medium text-surface-100 mb-1">Transaktions-Match (für EÜR/Buchhaltung)</h4>
+              <p className="text-surface-400 mb-2 text-xs">
+                Matcht eine Bank-/PayPal-Buchung gegen deine Paperless-Dokumente per Score-System
+                (Rechnungsnummer, Betrag, IBAN, Datum, Kundenname, Volltext). Gibt Top 3 Treffer mit Score 0-100% zurück.
+              </p>
+              <pre className="bg-surface-900 text-green-400 rounded-lg p-3 overflow-x-auto text-xs">
+{`POST /api/match/transaction
+Content-Type: application/json
+Authorization: Bearer po_dein_api_key
+
+{
+  "transaction": {
+    "amount": 41.22,
+    "date": "2025-11-10",
+    "description": "Domain renewal",
+    "customer": "TLD Registrar Ltd",
+    "iban": "DE...",
+    "bookingNumber": "WEB-2025-0058",
+    "paypalTransactionId": "1048329975057"
+  },
+  "options": {
+    "dateWindowDays": 7,
+    "amountToleranceEur": 0.5,
+    "amountTolerancePercent": 0,
+    "fuzzyThreshold": 75,
+    "limit": 3
+  }
+}`}</pre>
+              <p className="text-surface-500 mt-1 text-xs">
+                Antwort: <code className="text-surface-300">matches[]</code> mit
+                {' '}<code className="text-surface-300">documentId</code>, <code className="text-surface-300">score</code>,
+                {' '}<code className="text-surface-300">confidence</code> (high/medium/low),
+                {' '}<code className="text-surface-300">matchedOn[]</code> (welches Feld welches Gewicht beisteuerte).
+              </p>
+            </div>
+
+            <div>
+              <h4 className="font-medium text-surface-100 mb-1">Weitere Endpunkte</h4>
+              <div className="bg-surface-700/50 rounded-lg p-3 space-y-1 text-xs font-mono text-surface-200">
+                <div><span className="text-blue-400">GET</span> /api/rag/sessions - Alle Chat-Sessions auflisten</div>
+                <div><span className="text-blue-400">GET</span> /api/rag/sessions/:id - Einzelne Session mit Nachrichten</div>
+                <div><span className="text-red-400">DELETE</span> /api/rag/sessions/:id - Session loeschen</div>
+                <div><span className="text-green-400">POST</span> /api/rag/index/start - Indexierung starten</div>
+                <div><span className="text-blue-400">GET</span> /api/rag/index/status - Indexierungsstatus</div>
+                <div><span className="text-blue-400">GET</span> /api/rag/config - RAG-Konfiguration</div>
+                <div><span className="text-blue-400">GET</span> /api/match/health - Health-Check Match-API</div>
+                <div><span className="text-blue-400">GET</span> /api/match/log - Letzte 30 Match-Anfragen</div>
+              </div>
+            </div>
+
+            <div className="bg-primary-900/30 border border-primary-700 rounded-lg p-3">
+              <p className="text-primary-300 text-xs">
+                <strong>Tipp:</strong> In der Swagger UI kannst du alle Endpunkte direkt im Browser testen.
+                Klicke auf einen Endpunkt, dann auf "Try it out", fuege deinen API-Key ein und sende die Anfrage.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

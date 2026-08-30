@@ -1,0 +1,50 @@
+name: paperless-classification-dev
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "18081:8000"
+    volumes:
+      - ./backend/app:/app/app
+      - organizer-dev-data:/app/data
+    environment:
+      DATABASE_URL: sqlite+aiosqlite:///./data/organizer.db
+      DEBUG: "true"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - organizer-dev
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "18088:3000"
+    volumes:
+      - ./frontend:/app
+      - organizer-dev-node-modules:/app/node_modules
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - organizer-dev
+
+volumes:
+  organizer-dev-data:
+  organizer-dev-node-modules:
+
+networks:
+  organizer-dev:
+    driver: bridge

@@ -1,0 +1,44 @@
+name: paperless-classification
+
+services:
+  backend:
+    image: ghcr.io/chrschacht/paperless-classification-backend:latest
+    volumes:
+      - ${ORGANIZER_DATA_DIR:-./data}:/app/data
+    environment:
+      DATABASE_URL: sqlite+aiosqlite:///./data/organizer.db
+      DEBUG: "false"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - organizer
+
+  frontend:
+    image: ghcr.io/chrschacht/paperless-classification-frontend:latest
+    ports:
+      - "${ORGANIZER_BIND_ADDRESS:-127.0.0.1}:${ORGANIZER_PORT:-3001}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - organizer
+
+networks:
+  organizer:
+    driver: bridge

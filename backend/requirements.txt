@@ -1,0 +1,45 @@
+# FastAPI and server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# Database
+sqlalchemy>=2.0.25
+aiosqlite>=0.19.0
+
+# HTTP client for Paperless API
+httpx>=0.27.0
+aiohttp>=3.9.1
+
+# Fuzzy string matching for transaction matcher
+rapidfuzz>=3.0.0
+
+# LLM Providers
+openai>=1.12.0
+
+# Utilities
+pydantic>=2.5.3
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+
+# Security
+cryptography==42.0.2
+
+# Image processing (OCR)
+Pillow==10.2.0
+pdf2image==1.17.0
+pypdf==3.17.4
+
+# RAG - Vector Search
+chromadb==0.6.3
+rank-bm25==0.2.2
+nltk==3.9.1
+tiktoken==0.9.0
+PyStemmer>=2.0.1
+
+# RAG - Cross-Encoder Reranking (local, no GPU required)
+# Explicit CPU wheel: Docker Desktop on macOS cannot use Linux CUDA packages,
+# and recent PyPI torch builds otherwise pull several unnecessary gigabytes.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.13.0+cpu
+sentence-transformers==5.7.0

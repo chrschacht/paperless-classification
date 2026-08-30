@@ -1,0 +1,30 @@
+# Docker Compose für GitHub Container Registry Images (wie ein neuer User)
+services:
+  backend:
+    image: ghcr.io/chrschacht/paperless-classification-backend:latest
+    container_name: paperless-classification-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/data:/app/data
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./data/organizer.db
+    restart: unless-stopped
+    networks:
+      - paperless-classification-net
+
+  frontend:
+    image: ghcr.io/chrschacht/paperless-classification-frontend:latest
+    container_name: paperless-classification-frontend
+    ports:
+      - "3001:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - paperless-classification-net
+
+networks:
+  paperless-classification-net:
+    driver: bridge
+
