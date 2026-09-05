@@ -3,6 +3,10 @@
 # --- Shared Rules (used by both OpenAI and Ollama) ---
 
 RULES_TITLE = """TITEL-REGELN:
+- PRIORITAET 0: Formulierungen wie "wir haben den (uns uebersandten) Bescheid
+  geprueft", "wir legen Einspruch ein" oder "anbei erhalten Sie den Bescheid"
+  kennzeichnen ein Begleitschreiben. Titel dann mit "Pruefung", "Einspruch" oder
+  "Weiterleitung" beginnen; niemals nur "Einkommensteuerbescheid <Jahr>".
 - Der Titel ist das WICHTIGSTE Feld -- er muss das Dokument eindeutig identifizierbar machen
 - NICHT einfach Dokumenttyp + Korrespondent wiederholen! Diese stehen schon in eigenen Feldern
 - Stattdessen: WAS ist der konkrete INHALT/GEGENSTAND des Dokuments?
@@ -23,6 +27,10 @@ INHALT JE DOKUMENTTYP:
 - Gehaltsabrechnungen: Monat + Jahr (z.B. "Gehaltsabrechnung Maerz 2015")
 - Kontoauszuege: Monat/Zeitraum (z.B. "Kontoauszug Januar 2024")
 - Angebote: Was wird angeboten? (Leistung, Produkt)
+- Begleitschreiben eines Steuerberaters zu einem erwaehnten oder beigefuegten
+  Steuerbescheid: Titel nach dem tatsaechlichen Schreiben bilden, z.B.
+  "Pruefung Einkommensteuerbescheid 2024" oder "Einspruch Einkommensteuerbescheid 2024".
+  Das Begleitschreiben niemals selbst als originalen Steuerbescheid bezeichnen.
 
 - KEIN "Dokument", "PDF", "Scan" im Titel
 - KEINE Platzhalter wie "ohne Rechnungsnummer" oder "keine Rechnungsnummer" im Titel
@@ -40,6 +48,11 @@ RULES_CORRESPONDENT = """KORRESPONDENT-REGELN:
 - Der Absender/Aussteller/die Firma die das Dokument erstellt hat
 - NUR ein einziger Korrespondent
 - Den Namen so uebernehmen wie er im lesbaren Text steht (Absenderzeile, Fusszeile, Unterschrift)
+- Bei Begleit-, Weiterleitungs- und Beratungsschreiben ist der Verfasser des aktuellen
+  Schreibens der Korrespondent. Eine im Betreff oder Fliesstext nur erwaehnte Behoerde,
+  Versicherung oder andere Stelle ist NICHT der Absender.
+- Beispiel: Ein Schreiben eines Steuerberaters ueber die Pruefung eines Finanzamtsbescheids
+  hat den Steuerberater als Korrespondenten, nicht das Finanzamt.
 - WICHTIG: Nur angeben wenn du dir SICHER bist! Das OCR eines Logos oder Briefkopfs kann unleserlich sein.
 - Bei Unsicherheit: null zurueckgeben -- NIEMALS raten oder erfinden!
 - Den Korrespondenten NUR aus dem tatsaechlich lesbaren Text ableiten, nicht aus Logos oder Bildern
@@ -87,10 +100,18 @@ RULES_TAGS = """TAG-REGELN:
 - Lieber [] als einen nur ungefaehr passenden Tag."""
 
 RULES_DOCTYPE = """DOKUMENTTYP-REGELN:
+- PRIORITAET 0: Ein Schreiben mit Formulierungen wie "wir haben den (uns uebersandten)
+  Bescheid geprueft", "wir legen Einspruch ein" oder "anbei erhalten Sie den Bescheid"
+  ist eine Mitteilung bzw. Korrespondenz. Es berichtet ueber einen fremden Bescheid
+  und ist selbst KEIN Bescheid. Waehle aus der verfuegbaren Liste bevorzugt
+  "Mitteilung", andernfalls "Korrespondenz" oder den naechsten passenden Brieftyp.
 - Nur aus der verfuegbaren Liste waehlen, nichts erfinden
 - Wenn nichts passt: null setzen
 - Beitragsbescheid, Gebuehrenbescheid oder Umlagebescheid MIT konkreter Zahlungsforderung ist buchhalterisch eine Eingangsrechnung. Das Wort "Bescheid" aendert daran nichts.
 - Bescheid nur fuer eine hoheitliche/behördliche Entscheidung oder Information, insbesondere Finanzbehoerde oder Kassenärztliche Vereinigung, wenn keine Beitrags-, Gebuehren- oder Umlagezahlung angefordert wird.
+- Ein Begleit-, Weiterleitungs-, Pruefungs- oder Einspruchsschreiben eines Steuerberaters
+  zu einem Bescheid ist "Mitteilung" bzw. "Korrespondenz", nicht "Bescheid". "Bescheid" nur waehlen,
+  wenn das vorliegende Hauptdokument selbst die originale behoerdliche Entscheidung ist.
 - VORRANGIGE KASSENBON-REGEL: Kassenbon, Bon, Bonduplikat, Kundenbeleg oder Quittung eines Haendlers ist immer Eingangsrechnung. Das gilt auch bei Bar-, Karten-, VISA-, EC- oder kontaktloser Zahlung und bei Formulierungen wie "Zahlung erfolgt".
 - Erkennungsmerkmale eines Kassenbons: Haendler als Aussteller, Waren-/Leistungspositionen, SUMME/GESAMT, MwSt-Aufteilung, Kasse/TSE und anschliessender Zahlabschnitt. Der Zahlabschnitt beschreibt nur, wie die Eingangsrechnung bereits beglichen wurde; er macht den Bon niemals zum Zahlungsbeleg.
 - Zahlungsbeleg ausschliesslich fuer eine separate, nicht als Rechnung/Bon/Quittung aufgebaute Mitteilung ueber eine ausgefuehrte Zahlung, z.B. Ueberweisungsbestaetigung, Transaktionsbestaetigung oder Zahlungsbestaetigung einer Bank/eines Zahlungsdienstleisters. Ein Zahlungsbeleg enthaelt keine Warenliste und keine haendlertypische MwSt-Bonaufstellung.
@@ -103,6 +124,7 @@ RULES_DOCTYPE = """DOKUMENTTYP-REGELN:
 RULES_CUSTOM_FIELDS = """CUSTOM-FIELDS-FORMAT-REGELN:
 - Gib nur Felder mit einem tatsaechlich belegten Wert zurueck. Felder ohne Wert im custom_fields-Objekt weglassen, NICHT als null auffuehren und NICHT raten.
 - Die fachliche Relevanz richtet sich nach dem Dokumenttyp. Eine Steuernummer oder USt-IdNr. des Lieferanten ist kein relevantes Custom Field einer Eingangsrechnung und darf dort nicht ausgegeben werden.
+- Bei einer Referenznummer nur die fuer den konkreten Vorgang fachlich massgebliche, ausdruecklich bezeichnete Steuer-, Akten-, Geschaefts-, Vertrags- oder Kundennummer ausgeben. Rechnungsnummern bleiben im eigenen Feld.
 - Bei Betraegen: Punkt als Dezimaltrenner, keine Waehrungszeichen, kein Tausendertrennzeichen (z.B. 1499.99 statt 1.499,99 EUR)
 - Bei IBAN: Ohne Leerzeichen, komplett (z.B. DE89370400440532013000)
 - Bei Datum: Format YYYY-MM-DD
@@ -263,6 +285,7 @@ REGELN:
 - Gib AUSSCHLIESSLICH die oben aufgefuehrten Feldnamen zurueck
 - Gib nur Felder mit einem tatsaechlich belegten Wert zurueck. Wenn ein Feld NICHT im Dokument vorkommt oder nicht relevant ist: Schluessel vollstaendig weglassen, nicht null ausgeben.
 - Bei einer Eingangsrechnung keine Steuernummer oder USt-IdNr. des Rechnungsausstellers ausgeben. Diese Lieferantenangabe ist fuer die Ablage der Eingangsrechnung kein relevantes Custom Field.
+- Bei einer Referenznummer nur die fuer den konkreten Vorgang fachlich massgebliche, ausdruecklich bezeichnete Steuer-, Akten-, Geschaefts-, Vertrags- oder Kundennummer ausgeben. Keine Rechnungsnummer als Referenznummer wiederholen.
 - Betraege: Als Zahl mit Dezimalstellen (z.B. 2359.77). Komma durch Punkt ersetzen.
 - IBAN/Kontonummer: Komplett abschreiben, alle Ziffern und Buchstaben
 - Rechnungsnummern: Exakt wie im Dokument

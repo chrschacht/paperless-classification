@@ -12,6 +12,64 @@ import * as api from '../services/api'
 
 type Tab = 'classify' | 'benchmark' | 'settings' | 'history' | 'review' | 'tag_ideas'
 
+function RequiredFieldSelect({
+  documentType,
+  mappings,
+  onToggle,
+}: {
+  documentType: string
+  mappings: api.CustomFieldMapping[]
+  onToggle: (fieldId: number, checked: boolean) => void
+}) {
+  const selected = mappings.filter(mapping =>
+    (mapping.required_document_types || []).includes(documentType)
+  )
+  const selectedIds = new Set(selected.map(mapping => mapping.paperless_field_id))
+  const available = mappings.filter(mapping =>
+    !selectedIds.has(mapping.paperless_field_id)
+  )
+
+  return (
+    <div className="min-h-9 flex flex-wrap items-center gap-1.5 rounded-md border border-surface-700 bg-surface-800/70 px-2 py-1 focus-within:border-primary-500/60 focus-within:ring-1 focus-within:ring-primary-500/20">
+      {selected.map(mapping => (
+        <span
+          key={mapping.paperless_field_id}
+          className="inline-flex items-center gap-1 rounded-full border border-primary-500/35 bg-primary-500/15 px-2 py-0.5 text-xs text-primary-200"
+        >
+          {mapping.paperless_field_name}
+          <button
+            type="button"
+            aria-label={`${mapping.paperless_field_name} aus ${documentType} entfernen`}
+            onClick={() => onToggle(mapping.paperless_field_id, false)}
+            className="rounded-full text-primary-300 hover:bg-primary-500/20 hover:text-white"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </span>
+      ))}
+      <select
+        value=""
+        aria-label={`Pflichtfeld für ${documentType} hinzufügen`}
+        disabled={available.length === 0}
+        onChange={event => {
+          const fieldId = Number(event.target.value)
+          if (fieldId) onToggle(fieldId, true)
+        }}
+        className="min-w-44 flex-1 bg-transparent px-1 py-0.5 text-xs text-surface-400 outline-none disabled:opacity-50"
+      >
+        <option value="">
+          {available.length > 0 ? 'Pflichtfeld hinzufügen …' : 'Alle Felder ausgewählt'}
+        </option>
+        {available.map(mapping => (
+          <option key={mapping.paperless_field_id} value={mapping.paperless_field_id}>
+            {mapping.paperless_field_name}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
 export default function DocumentClassifier() {
   const [activeTab, setActiveTab] = useState<Tab>('classify')
   const [config, setConfig] = useState<api.ClassifierConfig | null>(null)
@@ -403,16 +461,24 @@ export default function DocumentClassifier() {
   }
 
   const toggleRequiredCustomField = (fieldId: number, documentType: string, checked: boolean) => {
-    const mapping = customFieldMappings.find(m => m.paperless_field_id === fieldId)
-    if (!mapping || !(mapping.applicable_document_types || []).includes(documentType)) return
-    const current = mapping.required_document_types || []
-    updateCustomFieldMapping(
-      fieldId,
-      'required_document_types',
-      checked
-        ? Array.from(new Set([...current, documentType]))
-        : current.filter(name => name !== documentType),
-    )
+    setCustomFieldMappings(prev => prev.map(item => {
+      if (item.paperless_field_id !== fieldId) return item
+      const applicable = item.applicable_document_types || []
+      const required = item.required_document_types || []
+      return {
+        ...item,
+        // A required field must also be extracted for this document type.
+        // Removing the requirement deliberately keeps it available as an
+        // optional field.
+        enabled: checked ? true : item.enabled,
+        applicable_document_types: checked
+          ? Array.from(new Set([...applicable, documentType]))
+          : applicable,
+        required_document_types: checked
+          ? Array.from(new Set([...required, documentType]))
+          : required.filter(name => name !== documentType),
+      }
+    }))
   }
 
   const updateStatusTagRule = (index: number, patch: Partial<api.StatusTagRule>) => {
@@ -986,9 +1052,9 @@ export default function DocumentClassifier() {
                       <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
                         <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                         <div>
-                          <p className="text-sm font-medium text-amber-300">Pflichtfelder nicht gefüllt</p>
+                          <p className="text-sm font-medium text-amber-300">Pflichtfelder fehlen oder sind ungültig</p>
                           <p className="text-xs text-amber-200/80 mt-1">
-                            {(result.missing_required_custom_fields || []).join(', ')}. Bei der automatischen Verarbeitung wird einmalig eine neue OCR erzwungen; fehlen die Werte danach weiterhin, erhält das Dokument „KI-prüfen“.
+                            {(result.missing_required_custom_fields || []).join(', ')}. Bei der automatischen Verarbeitung wird einmalig eine neue OCR erzwungen; fehlen die Werte danach weiterhin oder enthalten sie fremde Schriftzeichen, erhält das Dokument „KI-prüfen“.
                           </p>
                         </div>
                       </div>
@@ -2247,86 +2313,58 @@ export default function DocumentClassifier() {
                     onUserPromptChange={(v) => setConfig({ ...config, prompt_document_type: v })}
                     placeholder='z.B.: "Im Zweifel lieber null statt falschen Typ"'
                   />
-                  <p className="text-xs text-surface-500">
-                    Deaktiviere Dokumenttypen, die die KI nicht vorschlagen soll:
-                  </p>
-                  <div className="max-h-48 overflow-y-auto space-y-1">
+                  <div className="flex items-start gap-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-amber-300">Pflichtprüfung je Dokumenttyp</p>
+                      <p className="text-xs text-surface-400 mt-0.5">
+                        Aktiviere den Dokumenttyp über das Kontrollkästchen. Wähle direkt darunter als Chips die Custom Fields, die vorhanden, gefüllt und frei von fremden Schriftzeichen sein müssen. Ein Pflichtfeld wird automatisch für die Extraktion aktiviert.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="max-h-[32rem] overflow-y-auto space-y-2 pr-1">
                     {paperlessDocTypes.map(dt => {
                       const excluded = (config.excluded_document_type_ids || []).includes(dt.id)
                       return (
-                        <label
+                        <div
                           key={dt.id}
-                          className={clsx(
-                            'flex items-center gap-2 p-1.5 rounded text-sm cursor-pointer transition-colors',
-                            excluded ? 'opacity-50' : 'hover:bg-surface-700/30'
-                          )}
+                          className="p-2.5 rounded-lg bg-surface-900/50 border border-surface-700/50 space-y-2"
                         >
-                          <input
-                            type="checkbox"
-                            checked={!excluded}
-                            onChange={() => toggleExclusion('excluded_document_type_ids', dt.id)}
-                            className="w-4 h-4 rounded accent-primary-500"
-                          />
-                          <span className={excluded ? 'text-surface-500 line-through' : 'text-surface-300'}>{dt.name}</span>
-                        </label>
+                          <label className="flex items-center gap-2 text-sm cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={!excluded}
+                              onChange={() => toggleExclusion('excluded_document_type_ids', dt.id)}
+                              className="w-4 h-4 rounded accent-primary-500"
+                            />
+                            <span className={excluded ? 'text-surface-500 line-through' : 'text-surface-200 font-medium'}>{dt.name}</span>
+                          </label>
+                          <div>
+                            <p className="text-[11px] text-surface-500 mb-1.5">Pflichtfelder</p>
+                            <RequiredFieldSelect
+                              documentType={dt.name}
+                              mappings={customFieldMappings}
+                              onToggle={(fieldId, checked) => toggleRequiredCustomField(fieldId, dt.name, checked)}
+                            />
+                          </div>
+                        </div>
                       )
                     })}
                     {paperlessDocTypes.length === 0 && (
                       <p className="text-xs text-surface-600">Keine Dokumenttypen geladen</p>
                     )}
                   </div>
-                  {config.enable_custom_fields && customFieldMappings.some(mapping => mapping.enabled) && (
-                    <div className="pt-3 border-t border-surface-700/50 space-y-3">
-                      <div className="flex items-start gap-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                        <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-xs font-medium text-amber-300">Pflicht für Auto-Anwendung</p>
-                          <p className="text-xs text-surface-400 mt-0.5">
-                            Fehlt eines dieser Felder, wird einmalig „forceocr“ gesetzt und „ocrfinish“ entfernt. Nach der OCR wird erneut klassifiziert; fehlt das Feld weiterhin, folgt „KI-prüfen“.
-                          </p>
-                        </div>
-                      </div>
-                      <div className="space-y-2 max-h-72 overflow-y-auto">
-                        {paperlessDocTypes.map(documentType => {
-                          const eligible = customFieldMappings.filter(mapping =>
-                            mapping.enabled && (mapping.applicable_document_types || []).includes(documentType.name)
-                          )
-                          if (eligible.length === 0) return null
-                          return (
-                            <div key={documentType.id} className="p-2 rounded-lg bg-surface-900/40 border border-surface-700/40">
-                              <p className="text-xs font-medium text-surface-200 mb-1.5">{documentType.name}</p>
-                              <div className="flex flex-wrap gap-2">
-                                {eligible.map(mapping => (
-                                  <label key={mapping.paperless_field_id} className="flex items-center gap-1.5 px-2 py-1 rounded bg-surface-800/70 text-xs text-surface-300 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={(mapping.required_document_types || []).includes(documentType.name)}
-                                      onChange={event => toggleRequiredCustomField(
-                                        mapping.paperless_field_id,
-                                        documentType.name,
-                                        event.target.checked,
-                                      )}
-                                      className="w-3.5 h-3.5 rounded accent-amber-500"
-                                    />
-                                    {mapping.paperless_field_name}
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                      <div className="flex justify-end">
-                        <button
-                          type="button"
-                          onClick={handleSaveCustomFieldMappings}
-                          disabled={customFieldsSaving}
-                          className="btn btn-sm text-xs flex items-center gap-2 bg-surface-700 hover:bg-surface-600 text-surface-200"
-                        >
-                          {customFieldsSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                          Pflichtfelder speichern
-                        </button>
-                      </div>
+                  {paperlessDocTypes.length > 0 && customFieldMappings.length > 0 && (
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={handleSaveCustomFieldMappings}
+                        disabled={customFieldsSaving}
+                        className="btn text-sm flex items-center gap-2 bg-surface-700 hover:bg-surface-600 text-surface-200"
+                      >
+                        {customFieldsSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                        Pflichtfelder speichern
+                      </button>
                     </div>
                   )}
                 </div>
@@ -2757,7 +2795,7 @@ export default function DocumentClassifier() {
                         className="btn text-sm flex items-center gap-2 bg-surface-700 hover:bg-surface-600 text-surface-200"
                       >
                         {customFieldsSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                        Felder speichern
+                        Feldkonfiguration speichern
                       </button>
                     </div>
                   )}

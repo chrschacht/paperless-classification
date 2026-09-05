@@ -3,6 +3,7 @@
 import calendar
 import logging
 import re
+import unicodedata
 from datetime import date
 from typing import Dict, Any, Optional, List
 from dataclasses import asdict
@@ -84,6 +85,15 @@ def _custom_field_value_is_valid(
     if value is None or (isinstance(value, str) and not value.strip()):
         return False
     normalized = str(value).strip()
+    # Required reference values must not contain letters from unrelated
+    # writing systems.  Punctuation, currency symbols and digits remain
+    # allowed, as do all Latin letters (including German umlauts).
+    if any(
+        unicodedata.category(char).startswith("L")
+        and "LATIN" not in unicodedata.name(char, "")
+        for char in normalized
+    ):
+        return False
     ignored = {
         item.strip().casefold()
         for item in re.split(r"[,;\n]", mapping.ignore_values or "")
@@ -419,6 +429,55 @@ class DocumentClassifierService:
         )
         return list(result.scalars().all())
 
+    async def get_active_storage_profiles(self) -> List[StoragePathProfile]:
+        """Return profiles for the storage paths of the connected Paperless instance.
+
+        Profile rows can outlive a Paperless connection change. Paperless IDs are only
+        unique within one instance, so an old profile must not be reused when the same
+        numeric ID now belongs to a differently named path. Unsaved current paths are
+        enabled with neutral defaults, matching the settings UI.
+        """
+        saved_profiles = await self.get_storage_profiles()
+        saved_by_id = {profile.paperless_path_id: profile for profile in saved_profiles}
+        try:
+            current_paths = await self.paperless.get_storage_paths(use_cache=False)
+        except Exception:
+            logger.exception(
+                "Could not refresh Paperless storage paths; using saved profiles"
+            )
+            return saved_profiles
+
+        active_profiles: List[StoragePathProfile] = []
+        for path in current_paths:
+            path_id = path.get("id")
+            if path_id is None:
+                continue
+            current_name = str(path.get("name") or "").strip()
+            saved = saved_by_id.get(path_id)
+            if (
+                saved is not None
+                and str(saved.paperless_path_name or "").strip().casefold()
+                == current_name.casefold()
+            ):
+                active_profiles.append(saved)
+                continue
+
+            if saved is not None:
+                logger.warning(
+                    "Ignoring stale storage profile for Paperless path id %s: %r -> %r",
+                    path_id, saved.paperless_path_name, current_name,
+                )
+            active_profiles.append(StoragePathProfile(
+                paperless_path_id=path_id,
+                paperless_path_name=current_name,
+                paperless_path_path=str(path.get("path") or ""),
+                enabled=True,
+                person_name="",
+                path_type="private",
+                context_prompt="",
+            ))
+        return active_profiles
+
     async def save_storage_profile(self, data: Dict[str, Any]) -> StoragePathProfile:
         path_id = data.get("paperless_path_id")
         result = await self.db.execute(
@@ -511,7 +570,7 @@ class DocumentClassifierService:
 
     async def _build_provider(self, config: ClassifierConfig) -> BaseClassifierProvider:
         """Build the appropriate provider based on central LLM settings."""
-        storage_profiles = await self.get_storage_profiles()
+        storage_profiles = await self.get_active_storage_profiles()
         field_mappings = await self.get_custom_field_mappings()
         tool_executor = self._build_tool_executor(config, storage_profiles, field_mappings)
 
@@ -707,6 +766,19 @@ class DocumentClassifierService:
         content = doc_content or ""
         content_lower = content.casefold()
 
+        bank_key = keys_by_name.get("bank")
+        if bank_key is not None and fields.get(bank_key):
+            proposed_bank = str(fields[bank_key]).strip()
+            normalized_bank = re.sub(r"[^a-z0-9]", "", proposed_bank.casefold())
+            normalized_content = re.sub(r"[^a-z0-9]", "", content_lower)
+            if normalized_bank and normalized_bank not in normalized_content:
+                fields[bank_key] = None
+                result.debug_info["unsupported_bank_removed"] = proposed_bank
+                logger.info(
+                    "Incoming-invoice bank rule: removed unsupported value %r",
+                    proposed_bank,
+                )
+
         due_key = keys_by_name.get("fälligkeitsdatum")
         if due_key is not None:
             # A new deadline in a reminder takes precedence over the original
@@ -781,6 +853,29 @@ class DocumentClassifierService:
                     logger.info(
                         "Incoming-invoice payment rule: '%s' -> 'Lastschrift' "
                         "(explicit debit evidence)",
+                        previous,
+                    )
+            else:
+                credit_or_refund = bool(re.search(
+                    r"\b(?:gutschrift|rechnungskorrektur|stornorechnung|stornobeleg|"
+                    r"zurückerstattet|zurueckerstattet|erstattung)\b",
+                    content_lower,
+                ))
+                explicit_other_method = bool(re.search(
+                    r"\b(?:karten(?:zahlung)?|kreditkarte|visa|mastercard|paypal|"
+                    r"bar(?:zahlung)?|gutschein|gift[ -]?card|amazon[ -]?guthaben|"
+                    r"verrechnet|verrechnung)\b",
+                    content_lower,
+                ))
+                if credit_or_refund and not explicit_other_method:
+                    previous = fields.get(payment_key)
+                    fields[payment_key] = "Überweisung"
+                    result.debug_info["payment_method_correction"] = (
+                        "Gutschrift/Rechnungskorrektur ohne abweichende Zahlungsinformation"
+                    )
+                    logger.info(
+                        "Incoming-invoice payment rule: %r -> 'Überweisung' "
+                        "(credit/refund without another payment method)",
                         previous,
                     )
 
@@ -1156,22 +1251,26 @@ class DocumentClassifierService:
             "Bescheid", "Bescheinigung", "Korrespondenz", "Informationsmaterial",
             "Versanddokument",
         }
-        policy_path = None
+        policy_paths = []
         if result.document_type in accounting_types:
-            policy_path = "Buchhaltung"
+            policy_paths = ["Buchhaltung", "Finanzen"]
         elif result.document_type == "Personalunterlage":
-            policy_path = "Personal"
+            policy_paths = ["Personal"]
         elif result.document_type == "Vertrag":
-            policy_path = "Verträge"
+            policy_paths = ["Verträge"]
         elif result.document_type in administration_types:
-            policy_path = "Verwaltung"
+            policy_paths = ["Verwaltung"]
         elif result.document_type == "Unbekannt":
-            policy_path = "Unsortiert"
+            policy_paths = ["Unsortiert"]
 
-        if policy_path:
+        if policy_paths:
             all_paths = await self.paperless.get_storage_paths(use_cache=True)
-            target_path = next((p for p in all_paths if p.get("name") == policy_path), None)
+            target_path = next(
+                (p for name in policy_paths for p in all_paths if p.get("name") == name),
+                None,
+            )
             if target_path and result.storage_path_id != target_path.get("id"):
+                policy_path = target_path["name"]
                 logger.info(
                     "StoragePath policy: document type '%s' -> '%s' (replaced '%s')",
                     result.document_type, policy_path, result.storage_path_name or result.storage_path_id,
@@ -1498,7 +1597,7 @@ class DocumentClassifierService:
         model_override: Optional[str] = None,
     ) -> BaseClassifierProvider:
         """Build a specific provider with optional model override (for benchmarks)."""
-        storage_profiles = await self.get_storage_profiles()
+        storage_profiles = await self.get_active_storage_profiles()
         field_mappings = await self.get_custom_field_mappings()
         tool_executor = self._build_tool_executor(config, storage_profiles, field_mappings)
 
@@ -2036,7 +2135,7 @@ class DocumentClassifierService:
             reasons.append("Weder Korrespondent noch Dokumenttyp erkannt")
         if result.missing_required_custom_fields:
             reasons.append(
-                "Pflichtfelder nicht gefüllt: "
+                "Pflichtfelder fehlen oder sind ungültig: "
                 + ", ".join(result.missing_required_custom_fields)
             )
         # Tags are optional by design.  The tag prompt explicitly permits []
@@ -2073,7 +2172,7 @@ class DocumentClassifierService:
                 return {
                     "document_id": document_id,
                     "action": "force_ocr",
-                    "reason": "Pflichtfelder nicht gefüllt; erneute OCR eingeplant",
+                    "reason": "Pflichtfelder fehlen oder sind ungültig; erneute OCR eingeplant",
                     "missing_required_custom_fields": result.missing_required_custom_fields,
                 }
             await self._route_required_fields_to_review(document_id, config)
@@ -2211,7 +2310,7 @@ class DocumentClassifierService:
             if history:
                 history.status = "ocr_retry"
                 history.error_message = (
-                    "Pflichtfelder nicht gefüllt: " + ", ".join(missing_fields)
+                    "Pflichtfelder fehlen oder sind ungültig: " + ", ".join(missing_fields)
                 )
             await self.db.commit()
             logger.info(

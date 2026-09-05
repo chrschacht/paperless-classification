@@ -4,6 +4,22 @@ Alle wichtigen Änderungen an Paperless Classification.
 
 ---
 
+## 2.2.0 – 2026-09-05
+
+### Neu
+- Pflichtfelder werden direkt unter jedem Dokumenttyp als platzsparende Chip-Auswahl konfiguriert. Die Auswahl aktiviert das Custom Field automatisch für den jeweiligen Dokumenttyp.
+- Das zusammengefasste Feld „Referenznummer“ unterstützt fachlich maßgebliche Steuer-, Akten-, Geschäfts-, Vertrags- und Kundennummern, während Rechnungsnummern getrennt bleiben.
+
+### Verbessert
+- Pflichtfelder gelten nur als gültig, wenn sie befüllt sind und keine Buchstaben aus fremden Schriftsystemen enthalten.
+- Steuerberater-Begleitschreiben zu Bescheiden werden als Mitteilung mit dem tatsächlichen Absender und dem Speicherpfad „Steuerberater“ erkannt.
+- Gutschriften und Rechnungskorrekturen ohne belegte abweichende Zahlungsart erhalten „Überweisung“; unbelegte Bankwerte werden verworfen.
+- Aktive Speicherpfade werden mit der verbundenen Paperless-Instanz abgeglichen, damit veraltete Profile mit kollidierenden numerischen IDs nicht in die Klassifizierung gelangen.
+- Eingangsrechnungen verwenden in privaten Installationen zuverlässig den Speicherpfad „Finanzen“, sofern kein Pfad „Buchhaltung“ vorhanden ist.
+
+### Behoben
+- Eine unnötige Force-OCR-Wiederholung wird vermieden, wenn bei einer Gutschrift nur die implizite Zahlungsart fehlte.
+
 ## 2.1.1 – 2026-08-30
 
 ### Behoben
