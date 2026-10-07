@@ -4,6 +4,11 @@ Alle wichtigen Änderungen an Paperless Classification.
 
 ---
 
+## 2.3.1 – 2026-10-07
+
+### Behoben
+- Das Backend-Produktionsimage installiert die für SQLAlchemy-Async erforderliche `greenlet`-Abhängigkeit explizit und startet dadurch auch bei einem vollständig frischen Containerbuild zuverlässig.
+
 ## 2.3.0 – 2026-10-07
 
 ### Neu
