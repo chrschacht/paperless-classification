@@ -4,6 +4,15 @@ Alle wichtigen Änderungen an Paperless Classification.
 
 ---
 
+## 2.3.0 – 2026-10-07
+
+### Neu
+- In der manuellen Klassifizierung und in der Prüfwarteschlange lassen sich zusätzliche Paperless Custom Fields auswählen, befüllen und anwenden.
+
+### Verbessert
+- Manuell hinzugefügte Custom Fields dürfen bewusst außerhalb ihrer automatischen Dokumenttyp-Zuordnung verwendet werden; Feldvalidierungen bleiben aktiv.
+- Die Statusanzeige „Zur Prüfung“ verwendet die tatsächliche Zahl offener Prüfungen und aktualisiert sich nach Warteschlangenaktionen, beim Fensterwechsel und während aktiver Klassifikation zeitnah.
+
 ## 2.2.0 – 2026-09-05
 
 ### Neu
