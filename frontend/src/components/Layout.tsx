@@ -1,4 +1,4 @@
-import { ReactNode, useState, useEffect, useRef, type CSSProperties } from 'react'
+import { ReactNode, useState, useEffect, useRef, useCallback, type CSSProperties } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -209,11 +209,14 @@ export default function Layout({ children }: LayoutProps) {
   const [batchOcrStatus, setBatchOcrStatus] = useState<api.BatchOcrStatus | null>(null)
   const [watchdogStatus, setWatchdogStatus] = useState<api.WatchdogStatus | null>(null)
   const [autoClassifyStatus, setAutoClassifyStatus] = useState<any>(null)
+  const classifierReviewCount = Number(
+    autoClassifyStatus?.review_queue_count ?? autoClassifyStatus?.reviewed ?? 0
+  )
   const [ragIndexStatus, setRagIndexStatus] = useState<any>(null)
   const jobPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Poll active jobs (faster when something is running)
-  const pollJobs = async () => {
+  const pollJobs = useCallback(async () => {
     try {
       const [batch, watchdog, autoClassify, ragIdx] = await Promise.all([
         api.getBatchOcrStatus().catch(() => null),
@@ -228,18 +231,40 @@ export default function Layout({ children }: LayoutProps) {
     } catch {
       // silent
     }
-  }
+  }, [])
 
   useEffect(() => {
     pollJobs()
     const schedule = () => {
       if (jobPollRef.current) clearInterval(jobPollRef.current)
-      const isActive = batchOcrStatus?.running || watchdogStatus?.running || autoClassifyStatus?.running
+      const isActive = batchOcrStatus?.running || watchdogStatus?.running
+        || autoClassifyStatus?.enabled || ragIndexStatus?.status === 'indexing'
       jobPollRef.current = setInterval(pollJobs, isActive ? 8000 : 30000)
     }
     schedule()
     return () => { if (jobPollRef.current) clearInterval(jobPollRef.current) }
-  }, [batchOcrStatus?.running, watchdogStatus?.running, autoClassifyStatus?.running])
+  }, [
+    batchOcrStatus?.running,
+    watchdogStatus?.running,
+    autoClassifyStatus?.enabled,
+    ragIndexStatus?.status,
+    pollJobs,
+  ])
+
+  useEffect(() => {
+    const refresh = () => { void pollJobs() }
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refresh()
+    }
+    window.addEventListener('focus', refresh)
+    window.addEventListener('paperless-classification-status-changed', refresh)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      window.removeEventListener('paperless-classification-status-changed', refresh)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
+  }, [pollJobs])
 
   useEffect(() => {
     // First check if password is required
@@ -597,9 +622,9 @@ export default function Layout({ children }: LayoutProps) {
                         : 'Klassifikation aktiv'}
                   </span>
                 </div>
-                {(autoClassifyStatus.processed > 0 || autoClassifyStatus.reviewed > 0) && (
+                {(autoClassifyStatus.processed > 0 || classifierReviewCount > 0) && (
                   <p className="text-xs text-surface-500 ml-6 mt-0.5">
-                    {autoClassifyStatus.processed} angewendet, {autoClassifyStatus.reviewed} zur Prüfung
+                    {autoClassifyStatus.processed} angewendet, {classifierReviewCount} zur Prüfung
                   </p>
                 )}
               </Link>

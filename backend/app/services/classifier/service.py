@@ -76,6 +76,25 @@ def _omit_empty_custom_fields(custom_fields: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _custom_field_can_apply(
+    mapping: Optional[CustomFieldMapping],
+    selected_document_type: str,
+    manually_added: bool = False,
+) -> bool:
+    """Allow explicit review edits while keeping automatic field rules strict."""
+    if mapping is None:
+        return False
+    if manually_added:
+        return True
+    allowed_types = {
+        name.casefold() for name in effective_custom_field_document_types(
+            mapping.paperless_field_name,
+            mapping.applicable_document_types,
+        )
+    }
+    return bool(mapping.enabled and allowed_types) and selected_document_type in allowed_types
+
+
 def _custom_field_value_is_valid(
     mapping: CustomFieldMapping,
     value: Any,
@@ -2003,16 +2022,25 @@ class DocumentClassifierService:
         # Custom fields
         if classification.get("custom_fields"):
             field_mappings = await self.get_custom_field_mappings()
+            manual_custom_fields = {
+                str(name).strip().casefold()
+                for name in (classification.get("manual_custom_fields") or [])
+                if str(name).strip()
+            }
             paperless_field_definitions = {
                 field.get("id"): field
                 for field in await self.paperless.get_custom_fields(use_cache=True)
             }
             selected_type = str(classification.get("document_type") or "").casefold()
-            field_name_to_mapping = {m.paperless_field_name: m for m in field_mappings}
+            field_name_to_mapping = {
+                m.paperless_field_name.casefold(): m for m in field_mappings
+            }
             non_applicable_managed_ids = {
                 mapping.paperless_field_id
                 for mapping in field_mappings
-                if mapping.enabled and selected_type not in {
+                if mapping.enabled
+                and mapping.paperless_field_name.casefold() not in manual_custom_fields
+                and selected_type not in {
                     name.casefold() for name in effective_custom_field_document_types(
                         mapping.paperless_field_name,
                         mapping.applicable_document_types,
@@ -2021,14 +2049,14 @@ class DocumentClassifierService:
             }
             custom_field_updates = []
             for field_name, value in classification["custom_fields"].items():
-                mapping = field_name_to_mapping.get(field_name)
-                allowed_types = {
-                    name.casefold() for name in effective_custom_field_document_types(
-                        mapping.paperless_field_name if mapping else field_name,
-                        mapping.applicable_document_types if mapping else None,
-                    )
-                }
-                applicable = bool(mapping and mapping.enabled and allowed_types) and selected_type in allowed_types
+                normalized_field_name = str(field_name).strip().casefold()
+                mapping = field_name_to_mapping.get(normalized_field_name)
+                manually_added = normalized_field_name in manual_custom_fields
+                applicable = _custom_field_can_apply(
+                    mapping,
+                    selected_type,
+                    manually_added=manually_added,
+                )
                 if mapping and not applicable:
                     logger.info("Apply: custom field '%s' skipped for document type '%s'", field_name, selected_type)
                 if mapping and applicable and value is not None:

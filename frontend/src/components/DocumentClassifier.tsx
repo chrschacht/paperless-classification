@@ -92,6 +92,7 @@ export default function DocumentClassifier() {
   const [editCreatedDate, setEditCreatedDate] = useState<string>('')
   const [editStoragePathId, setEditStoragePathId] = useState<number | null>(null)
   const [editCustomFields, setEditCustomFields] = useState<Record<string, string | null>>({})
+  const [manuallyAddedCustomFields, setManuallyAddedCustomFields] = useState<Set<string>>(new Set())
   const [disabledCustomFields, setDisabledCustomFields] = useState<Set<string>>(new Set())
   const [editExistingTags, setEditExistingTags] = useState<string[]>([])
   const [tagSearch, setTagSearch] = useState<string>('')
@@ -199,9 +200,29 @@ export default function DocumentClassifier() {
     setEditCustomFields(
       Object.fromEntries(Object.entries(res.custom_fields).map(([k, v]) => [k, v !== null ? String(v) : null]))
     )
+    setManuallyAddedCustomFields(new Set())
     setDisabledCustomFields(new Set())
     setTagSearch('')
     setCorrSearch('')
+  }
+
+  const addCustomField = (fieldName: string) => {
+    const normalizedName = fieldName.trim()
+    if (!normalizedName) return
+
+    setEditCustomFields(prev => {
+      const alreadyPresent = Object.keys(prev).some(
+        name => name.toLocaleLowerCase() === normalizedName.toLocaleLowerCase()
+      )
+      return alreadyPresent ? prev : { ...prev, [normalizedName]: null }
+    })
+    setManuallyAddedCustomFields(prev => new Set(prev).add(normalizedName))
+    setDisabledCustomFields(prev => {
+      if (!prev.has(normalizedName)) return prev
+      const next = new Set(prev)
+      next.delete(normalizedName)
+      return next
+    })
   }
 
   // Helper: was this field kept from existing (not changed by AI)?
@@ -224,7 +245,10 @@ export default function DocumentClassifier() {
     setApplied(false)
     setReviewMode(false)
     // Load Paperless items for editing if not yet loaded
-    if (paperlessTags.length === 0 || paperlessDocTypes.length === 0 || paperlessCorrespondents.length === 0) loadPaperlessItems()
+    if (
+      paperlessTags.length === 0 || paperlessDocTypes.length === 0
+      || paperlessCorrespondents.length === 0 || customFieldMappings.length === 0
+    ) loadPaperlessItems()
     if (paperlessStoragePaths.length === 0) {
       api.getStoragePathsFromPaperless().then(setPaperlessStoragePaths).catch(() => {})
     }
@@ -264,6 +288,7 @@ export default function DocumentClassifier() {
         existing_storage_path_name: result.existing_storage_path_name,
         created_date: editCreatedDate || result.created_date,
         custom_fields: Object.fromEntries(Object.entries(editCustomFields).filter(([k]) => !disabledCustomFields.has(k))),
+        manual_custom_fields: Array.from(manuallyAddedCustomFields).filter(name => !disabledCustomFields.has(name)),
       })
       setApplied(true)
       // Refresh Paperless lists so new tags/correspondents appear immediately
@@ -297,6 +322,7 @@ export default function DocumentClassifier() {
         existing_storage_path_name: result.existing_storage_path_name,
         created_date: editCreatedDate || result.created_date,
         custom_fields: Object.fromEntries(Object.entries(editCustomFields).filter(([k]) => !disabledCustomFields.has(k))),
+        manual_custom_fields: Array.from(manuallyAddedCustomFields).filter(name => !disabledCustomFields.has(name)),
       })
       setApplied(true)
 
@@ -414,7 +440,10 @@ export default function DocumentClassifier() {
   }
 
   useEffect(() => {
-    if ((activeTab === 'settings' || activeTab === 'review') && paperlessTags.length === 0) {
+    if (
+      (activeTab === 'settings' || activeTab === 'review')
+      && (paperlessTags.length === 0 || customFieldMappings.length === 0)
+    ) {
       loadPaperlessItems()
     }
     if ((activeTab === 'settings' || activeTab === 'benchmark') && !ollamaModels) {
@@ -718,6 +747,11 @@ export default function DocumentClassifier() {
     try {
       const q = await api.fetchJson<any[]>('/classifier/review-queue')
       setReviewQueue(q)
+      setAutoClassifyStatus((previous: any) => previous
+        ? { ...previous, review_queue_count: q.length }
+        : previous
+      )
+      window.dispatchEvent(new Event('paperless-classification-status-changed'))
     } catch (e) {
       console.error('Failed to load review queue:', e)
     } finally {
@@ -829,7 +863,10 @@ export default function DocumentClassifier() {
     setApplied(entry.status === 'applied')
     setReviewMode(entry.status === 'review')
     initEditState(res)
-    if (paperlessTags.length === 0 || paperlessDocTypes.length === 0 || paperlessCorrespondents.length === 0) {
+    if (
+      paperlessTags.length === 0 || paperlessDocTypes.length === 0
+      || paperlessCorrespondents.length === 0 || customFieldMappings.length === 0
+    ) {
       loadPaperlessItems()
     }
     if (paperlessStoragePaths.length === 0) {
@@ -1332,44 +1369,83 @@ export default function DocumentClassifier() {
                     </div>
 
                     {/* Custom Fields */}
-                    {Object.keys(editCustomFields).length > 0 && (
+                    {(customFieldMappings.length > 0 || Object.keys(editCustomFields).length > 0) && (
                       <div>
-                        <label className="text-xs text-surface-500 flex items-center gap-1 mb-2">
-                          <Hash className="w-3 h-3" /> Custom Fields
-                          <span className="text-surface-600 ml-1">— Klick auf Namen zum Deaktivieren</span>
-                        </label>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                          {Object.entries(editCustomFields).map(([key, value]) => {
-                            const isDisabled = disabledCustomFields.has(key)
-                            return (
-                              <div key={key} className={clsx(isDisabled && 'opacity-40')}>
-                                <button
-                                  type="button"
-                                  onClick={() => setDisabledCustomFields(prev => {
-                                    const next = new Set(prev)
-                                    if (next.has(key)) next.delete(key); else next.add(key)
-                                    return next
-                                  })}
-                                  className={clsx(
-                                    'text-xs mb-0.5 flex items-center gap-1 transition-colors',
-                                    isDisabled ? 'text-red-400 line-through' : 'text-surface-500 hover:text-surface-300'
-                                  )}
-                                >
-                                  {isDisabled ? <XCircle className="w-3 h-3" /> : <Check className="w-3 h-3 opacity-50" />}
-                                  {key}
-                                </button>
-                                <input
-                                  type="text"
-                                  value={value ?? ''}
-                                  onChange={e => setEditCustomFields(prev => ({ ...prev, [key]: e.target.value || null }))}
-                                  disabled={isDisabled}
-                                  className={clsx('input w-full text-sm font-mono', isDisabled && 'bg-surface-900 text-surface-600')}
-                                  placeholder="nicht gefunden"
-                                />
-                              </div>
-                            )
-                          })}
+                        <div className="flex flex-col gap-2 mb-2 sm:flex-row sm:items-center sm:justify-between">
+                          <label className="text-xs text-surface-500 flex items-center gap-1">
+                            <Hash className="w-3 h-3" /> Custom Fields
+                            <span className="text-surface-600 ml-1">— Klick auf Namen zum Deaktivieren</span>
+                          </label>
+                          <select
+                            value=""
+                            aria-label="Custom Field hinzufügen"
+                            onChange={event => addCustomField(event.target.value)}
+                            disabled={customFieldMappings.every(mapping =>
+                              Object.keys(editCustomFields).some(
+                                name => name.toLocaleLowerCase() === mapping.paperless_field_name.toLocaleLowerCase()
+                              )
+                            )}
+                            className="input h-8 min-w-52 py-1 text-xs text-surface-300 disabled:opacity-50"
+                          >
+                            <option value="">
+                              {customFieldMappings.some(mapping =>
+                                !Object.keys(editCustomFields).some(
+                                  name => name.toLocaleLowerCase() === mapping.paperless_field_name.toLocaleLowerCase()
+                                )
+                              ) ? 'Custom Field hinzufügen …' : 'Alle Felder hinzugefügt'}
+                            </option>
+                            {customFieldMappings
+                              .filter(mapping =>
+                                !Object.keys(editCustomFields).some(
+                                  name => name.toLocaleLowerCase() === mapping.paperless_field_name.toLocaleLowerCase()
+                                )
+                              )
+                              .sort((a, b) => a.paperless_field_name.localeCompare(b.paperless_field_name, 'de'))
+                              .map(mapping => (
+                                <option key={mapping.paperless_field_id} value={mapping.paperless_field_name}>
+                                  {mapping.paperless_field_name}
+                                </option>
+                              ))}
+                          </select>
                         </div>
+                        {Object.keys(editCustomFields).length > 0 ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {Object.entries(editCustomFields).map(([key, value]) => {
+                              const isDisabled = disabledCustomFields.has(key)
+                              return (
+                                <div key={key} className={clsx(isDisabled && 'opacity-40')}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDisabledCustomFields(prev => {
+                                      const next = new Set(prev)
+                                      if (next.has(key)) next.delete(key); else next.add(key)
+                                      return next
+                                    })}
+                                    className={clsx(
+                                      'text-xs mb-0.5 flex items-center gap-1 transition-colors',
+                                      isDisabled ? 'text-red-400 line-through' : 'text-surface-500 hover:text-surface-300'
+                                    )}
+                                  >
+                                    {isDisabled ? <XCircle className="w-3 h-3" /> : <Check className="w-3 h-3 opacity-50" />}
+                                    {key}
+                                  </button>
+                                  <input
+                                    type="text"
+                                    value={value ?? ''}
+                                    onChange={e => setEditCustomFields(prev => ({ ...prev, [key]: e.target.value || null }))}
+                                    disabled={isDisabled}
+                                    className={clsx('input w-full text-sm font-mono', isDisabled && 'bg-surface-900 text-surface-600')}
+                                    placeholder="nicht gefunden"
+                                  />
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-surface-600">
+                            Noch kein Custom Field ausgewählt.
+                          </p>
+                        )}
                       </div>
                     )}
 
@@ -3162,7 +3238,7 @@ export default function DocumentClassifier() {
                       Tag-Modus · UND
                     </span>
                     <span className="text-xs text-surface-500">
-                      {autoClassifyStatus.processed} angewendet · {autoClassifyStatus.reviewed} zur Prüfung · {autoClassifyStatus.errors} Fehler
+                      {autoClassifyStatus.processed} angewendet · {autoClassifyStatus.review_queue_count ?? autoClassifyStatus.reviewed ?? 0} zur Prüfung · {autoClassifyStatus.errors} Fehler
                     </span>
                   </div>
                 )}

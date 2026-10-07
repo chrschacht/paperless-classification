@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from app.services.classifier.service import (
     DocumentClassifierService,
+    _custom_field_can_apply,
     _custom_field_value_is_valid,
     _omit_empty_custom_fields,
 )
@@ -50,6 +51,35 @@ class EffectiveCustomFieldDocumentTypesTest(unittest.TestCase):
                 "Zahldatum", ["Eingangsrechnung", "Ausgangsrechnung"],
             ),
             ["Eingangsrechnung", "Ausgangsrechnung"],
+        )
+
+
+class CustomFieldApplyPolicyTest(unittest.TestCase):
+    def mapping(self, **overrides):
+        values = {
+            "paperless_field_name": "Vertragsnummer",
+            "enabled": True,
+            "applicable_document_types": ["Vertrag"],
+        }
+        values.update(overrides)
+        return SimpleNamespace(**values)
+
+    def test_automatic_field_stays_limited_to_configured_document_types(self):
+        mapping = self.mapping()
+        self.assertTrue(_custom_field_can_apply(mapping, "vertrag"))
+        self.assertFalse(_custom_field_can_apply(mapping, "eingangsrechnung"))
+
+    def test_manually_added_review_field_overrides_automatic_scope(self):
+        mapping = self.mapping(enabled=False, applicable_document_types=[])
+        self.assertTrue(
+            _custom_field_can_apply(
+                mapping, "eingangsrechnung", manually_added=True,
+            )
+        )
+
+    def test_unknown_field_is_never_applied(self):
+        self.assertFalse(
+            _custom_field_can_apply(None, "eingangsrechnung", manually_added=True)
         )
 
 

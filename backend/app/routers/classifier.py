@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from dataclasses import asdict
 
 from app.database import get_db
@@ -1575,15 +1575,21 @@ async def stop_auto_classify(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/auto-classify/status")
-async def get_auto_classify_status():
+async def get_auto_classify_status(db: AsyncSession = Depends(get_db)):
     """Get current status of the auto-classification job."""
     from app.services.ollama_lock import is_locked as ollama_is_locked, current_holder as ollama_holder
+    review_queue_count = await db.scalar(
+        select(func.count(ClassificationHistory.id)).where(
+            ClassificationHistory.status == "review"
+        )
+    )
     return {
         "enabled": _auto_classify_state["enabled"],
         "running": _auto_classify_state["running"],
         "processed": _auto_classify_state["processed"],
         "errors": _auto_classify_state["errors"],
         "reviewed": _auto_classify_state["reviewed"],
+        "review_queue_count": int(review_queue_count or 0),
         "current_doc": _auto_classify_state["current_doc"],
         "last_run": _auto_classify_state["last_run"],
         "filter_mode": "tag",
